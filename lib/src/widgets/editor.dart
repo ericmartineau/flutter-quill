@@ -145,7 +145,7 @@ String _standardizeImageUrl(String url) {
 
 bool _isMobile() => io.Platform.isAndroid || io.Platform.isIOS;
 
-Widget _defaultEmbedBuilder(
+Widget defaultEmbedBuilder(
     BuildContext context, leaf.Embed node, bool readOnly) {
   assert(!kIsWeb, 'Please provide EmbedBuilder for Web');
   switch (node.value.type) {
@@ -251,7 +251,7 @@ class QuillEditor extends StatefulWidget {
       this.onSingleLongTapStart,
       this.onSingleLongTapMoveUpdate,
       this.onSingleLongTapEnd,
-      this.embedBuilder = _defaultEmbedBuilder,
+      this.embedBuilder = defaultEmbedBuilder,
       this.customStyleBuilder,
       Key? key});
 
