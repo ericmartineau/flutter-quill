@@ -7,10 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:string_validator/string_validator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'floating_text.dart';
+import 'proxy.dart';
 import '../models/documents/attribute.dart';
 import '../models/documents/document.dart';
 import '../models/documents/nodes/container.dart' as container_node;
@@ -145,6 +146,47 @@ String _standardizeImageUrl(String url) {
 
 bool _isMobile() => io.Platform.isAndroid || io.Platform.isIOS;
 
+ReducedLine defaultLineBuilder(
+  BuildContext context,
+  LineNodes content, {
+  required TextAlign textAlign,
+  required TextDirection textDirection,
+  required StrutStyle strutStyle,
+  required double textScaleFactor,
+}) {
+  final spans = content.children.map<InlineSpan>((item) {
+    if (item is WidgetLineNode) {
+      return WidgetSpan(child: item.widget);
+    } else if (item is TextSpanNode) {
+      return item.span;
+    } else {
+      throw ArgumentError('Invalid item type');
+    }
+  }).toList(growable: false);
+
+  // final child = RichText(
+  //   text:
+  //   textAlign: textAlign,
+  //   textDirection: textDirection,
+  //   strutStyle: strutStyle,
+  //   textScaleFactor: textScaleFactor,
+  // );
+
+  return ReducedLine(
+    FloatingText(
+      TextSpan(children: spans),
+      textStyle: content.lineStyle,
+      textAlign: textAlign,
+      textDirection: textDirection,
+      textScaleFactor: 1,
+      locale: Localizations.localeOf(context),
+      strutStyle: strutStyle,
+      textWidthBasis: TextWidthBasis.parent,
+      textHeightBehavior: null,
+    ),
+  );
+}
+
 Widget defaultEmbedBuilder(
     BuildContext context, leaf.Embed node, bool readOnly) {
   assert(!kIsWeb, 'Please provide EmbedBuilder for Web');
@@ -252,6 +294,7 @@ class QuillEditor extends StatefulWidget {
       this.onSingleLongTapMoveUpdate,
       this.onSingleLongTapEnd,
       this.embedBuilder = defaultEmbedBuilder,
+      this.lineBuilder = defaultLineBuilder,
       this.customStyleBuilder,
       Key? key});
 
@@ -293,6 +336,7 @@ class QuillEditor extends StatefulWidget {
   final Brightness keyboardAppearance;
   final ScrollPhysics? scrollPhysics;
   final ValueChanged<String>? onLaunchUrl;
+
   // Returns whether gesture is handled
   final bool Function(
       TapDownDetails details, TextPosition Function(Offset offset))? onTapDown;
@@ -309,12 +353,14 @@ class QuillEditor extends StatefulWidget {
   // Returns whether gesture is handled
   final bool Function(LongPressMoveUpdateDetails details,
       TextPosition Function(Offset offset))? onSingleLongTapMoveUpdate;
+
   // Returns whether gesture is handled
   final bool Function(
           LongPressEndDetails details, TextPosition Function(Offset offset))?
       onSingleLongTapEnd;
 
   final EmbedBuilder embedBuilder;
+  final LineBuilder lineBuilder;
   final CustomStyleBuilder? customStyleBuilder;
 
   @override
@@ -420,6 +466,7 @@ class _QuillEditorState extends State<QuillEditor>
         widget.enableInteractiveSelection,
         widget.scrollPhysics,
         widget.embedBuilder,
+        widget.lineBuilder,
         widget.customStyleBuilder,
       ),
     );

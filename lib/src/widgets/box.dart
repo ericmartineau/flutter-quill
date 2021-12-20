@@ -2,7 +2,9 @@ import 'package:flutter/rendering.dart';
 
 import '../models/documents/nodes/container.dart';
 
-abstract class RenderContentProxyBox implements RenderBox {
+abstract class RenderContentProxyBox {
+  dynamic get parentData;
+
   double getPreferredLineHeight();
 
   Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype);
@@ -14,6 +16,35 @@ abstract class RenderContentProxyBox implements RenderBox {
   TextRange getWordBoundary(TextPosition position);
 
   List<TextBox> getBoxesForSelection(TextSelection textSelection);
+
+  Offset localToGlobal(Offset topLeft);
+}
+
+mixin DelegatingRenderContentProxyBox implements RenderContentProxyBox {
+  RenderContentProxyBox get delegate;
+
+  @override
+  double getPreferredLineHeight() => delegate.getPreferredLineHeight();
+
+  @override
+  Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype) =>
+      delegate.getOffsetForCaret(position, caretPrototype);
+
+  @override
+  TextPosition getPositionForOffset(Offset offset) =>
+      delegate.getPositionForOffset(offset);
+
+  @override
+  double? getFullHeightForCaret(TextPosition position) =>
+      delegate.getFullHeightForCaret(position);
+
+  @override
+  TextRange getWordBoundary(TextPosition position) =>
+      delegate.getWordBoundary(position);
+
+  @override
+  List<TextBox> getBoxesForSelection(TextSelection textSelection) =>
+      delegate.getBoxesForSelection(textSelection);
 }
 
 /// Base class for render boxes of editable content.

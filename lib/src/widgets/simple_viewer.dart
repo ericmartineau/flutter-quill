@@ -36,6 +36,7 @@ class QuillSimpleViewer extends StatefulWidget {
     this.scrollBottomInset = 0,
     this.padding = EdgeInsets.zero,
     this.embedBuilder,
+    this.lineBuilder,
     Key? key,
   })  : assert(truncate ||
             ((truncateScale == null) &&
@@ -54,6 +55,7 @@ class QuillSimpleViewer extends StatefulWidget {
   final double scrollBottomInset;
   final EdgeInsetsGeometry padding;
   final EmbedBuilder? embedBuilder;
+  final LineBuilder? lineBuilder;
   final bool readOnly;
 
   @override
@@ -100,6 +102,7 @@ class _QuillSimpleViewerState extends State<QuillSimpleViewer>
   }
 
   EmbedBuilder get embedBuilder => widget.embedBuilder ?? _defaultEmbedBuilder;
+  LineBuilder get lineBuilder => widget.lineBuilder ?? defaultLineBuilder;
 
   Widget _defaultEmbedBuilder(
       BuildContext context, leaf.Embed node, bool readOnly) {
@@ -215,6 +218,7 @@ class _QuillSimpleViewerState extends State<QuillSimpleViewer>
                 ? const EdgeInsets.all(16)
                 : null,
             embedBuilder: embedBuilder,
+            leafReducer: lineBuilder,
             cursorCont: _cursorCont,
             indentLevelCounts: indentLevelCounts,
             onCheckboxTap: _handleCheckboxTap,
@@ -244,25 +248,28 @@ class _QuillSimpleViewerState extends State<QuillSimpleViewer>
       line: node,
       textDirection: _textDirection,
       embedBuilder: embedBuilder,
+      leafReducer: lineBuilder,
       styles: _styles,
       readOnly: widget.readOnly,
     );
+    final reduced = textLine.build(context);
     final editableTextLine = EditableTextLine(
-        node,
-        null,
-        textLine,
-        0,
-        _getVerticalSpacingForLine(node, _styles),
-        _textDirection,
-        widget.controller.selection,
-        Colors.black,
-        //widget.selectionColor,
-        false,
-        //enableInteractiveSelection,
-        false,
-        //_hasFocus,
-        MediaQuery.of(context).devicePixelRatio,
-        _cursorCont);
+      node,
+      reduced.embed,
+      reduced.primary,
+      0,
+      _getVerticalSpacingForLine(node, _styles),
+      _textDirection,
+      widget.controller.selection,
+      Colors.black,
+      //widget.selectionColor,
+      false,
+      //enableInteractiveSelection,
+      false,
+      //_hasFocus,
+      MediaQuery.of(context).devicePixelRatio,
+      _cursorCont, position: reduced.position,
+    );
     return editableTextLine;
   }
 

@@ -44,8 +44,7 @@ class Document {
     _rules.setCustomRules(customRules);
   }
 
-  final StreamController<Tuple3<Delta, Delta, ChangeSource>> _observer =
-      StreamController.broadcast();
+  final StreamController<Tuple3<Delta, Delta, ChangeSource>> _observer = StreamController.broadcast();
 
   final History _history = History();
 
@@ -60,8 +59,7 @@ class Document {
       return Delta();
     }
 
-    final delta = _rules.apply(RuleType.INSERT, this, index,
-        data: data, len: replaceLength);
+    final delta = _rules.apply(RuleType.INSERT, this, index, data: data, len: replaceLength);
     compose(delta, ChangeSource.LOCAL);
     return delta;
   }
@@ -104,8 +102,7 @@ class Document {
 
     var delta = Delta();
 
-    final formatDelta = _rules.apply(RuleType.FORMAT, this, index,
-        len: len, attribute: attribute);
+    final formatDelta = _rules.apply(RuleType.FORMAT, this, index, len: len, attribute: attribute);
     if (formatDelta.isNotEmpty) {
       compose(formatDelta, ChangeSource.LOCAL);
       delta = delta.compose(formatDelta);
@@ -145,8 +142,7 @@ class Document {
     delta = _transform(delta);
     final originalDelta = toDelta();
     for (final op in delta.toList()) {
-      final style =
-          op.attributes != null ? Style.fromJson(op.attributes) : null;
+      final style = op.attributes != null ? Style.fromJson(op.attributes) : null;
 
       if (op.isInsert) {
         _root.insert(offset, _normalize(op.data), style);
@@ -166,9 +162,10 @@ class Document {
       throw '_delta compose failed';
     }
 
-    if (_delta != _root.toDelta()) {
-      throw 'Compose failed';
-    }
+    // if (_delta != _root.toDelta()) {
+    //   print("Mismatch");
+    //   throw StateError('Compose failed');
+    // }
     final change = Tuple3(originalDelta, delta, changeSource);
     _observer.add(change);
     _history.handleDocChange(change);
@@ -197,25 +194,16 @@ class Document {
     return res;
   }
 
-  static void _autoAppendNewlineAfterEmbeddable(
-      int i, List<Operation> ops, Operation op, Delta res, String type) {
-    final nextOpIsEmbed = i + 1 < ops.length &&
-        ops[i + 1].isInsert &&
-        ops[i + 1].data is Map &&
-        (ops[i + 1].data as Map).containsKey(type);
-    if (nextOpIsEmbed &&
-        op.data is String &&
-        (op.data as String).isNotEmpty &&
-        !(op.data as String).endsWith('\n')) {
+  static void _autoAppendNewlineAfterEmbeddable(int i, List<Operation> ops, Operation op, Delta res, String type) {
+    final nextOpIsEmbed =
+        i + 1 < ops.length && ops[i + 1].isInsert && ops[i + 1].data is Map && (ops[i + 1].data as Map).containsKey(type);
+    if (nextOpIsEmbed && op.data is String && (op.data as String).isNotEmpty && !(op.data as String).endsWith('\n')) {
       res.push(Operation.insert('\n'));
     }
     // embed could be image or video
-    final opInsertEmbed =
-        op.isInsert && op.data is Map && (op.data as Map).containsKey(type);
-    final nextOpIsLineBreak = i + 1 < ops.length &&
-        ops[i + 1].isInsert &&
-        ops[i + 1].data is String &&
-        (ops[i + 1].data as String).startsWith('\n');
+    final opInsertEmbed = op.isInsert && op.data is Map && (op.data as Map).containsKey(type);
+    final nextOpIsLineBreak =
+        i + 1 < ops.length && ops[i + 1].isInsert && ops[i + 1].data is String && (ops[i + 1].data as String).startsWith('\n');
     if (opInsertEmbed && (i + 1 == ops.length - 1 || !nextOpIsLineBreak)) {
       // automatically append '\n' for embeddable
       res.push(Operation.insert('\n'));
@@ -250,20 +238,15 @@ class Document {
     var offset = 0;
     for (final op in doc.toList()) {
       if (!op.isInsert) {
-        throw ArgumentError.value(doc,
-            'Document can only contain insert operations but ${op.key} found.');
+        throw ArgumentError.value(doc, 'Document can only contain insert operations but ${op.key} found.');
       }
-      final style =
-          op.attributes != null ? Style.fromJson(op.attributes) : null;
+      final style = op.attributes != null ? Style.fromJson(op.attributes) : null;
       final data = _normalize(op.data);
       _root.insert(offset, data, style);
       offset += op.length!;
     }
     final node = _root.last;
-    if (node is Line &&
-        node.parent is! Block &&
-        node.style.isEmpty &&
-        _root.childCount > 1) {
+    if (node is Line && node.parent is! Block && node.style.isEmpty && _root.childCount > 1) {
       _root.remove(node);
     }
   }
@@ -279,9 +262,7 @@ class Document {
     }
 
     final delta = node.toDelta();
-    return delta.length == 1 &&
-        delta.first.data == '\n' &&
-        delta.first.key == 'insert';
+    return delta.length == 1 && delta.first.data == '\n' && delta.first.key == 'insert';
   }
 }
 

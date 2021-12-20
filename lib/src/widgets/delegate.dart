@@ -2,14 +2,75 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import '../../flutter_quill.dart';
+import 'package:flutter_quill/src/widgets/text_line.dart';
 
+import '../../flutter_quill.dart';
 import '../models/documents/nodes/leaf.dart';
 import 'editor.dart';
 import 'text_selection.dart';
 
 typedef EmbedBuilder = Widget Function(
     BuildContext context, Embed node, bool readOnly);
+
+abstract class LeafWidget {
+  Widget get widget;
+}
+
+class LineNodes {
+  LineNodes(this.lineStyle);
+
+  final List<LineNode> children = [];
+  final TextStyle lineStyle;
+
+  bool get hasEmbed => children.any((element) => element is WidgetLineNode);
+
+  bool get hasText => children.any((element) => element is TextSpanNode);
+
+  bool get isMixed => hasEmbed && hasText;
+
+  void addSpan(TextSpan span) {
+    children.add(TextSpanNode(span));
+  }
+
+  void addWidget(Widget widget) {
+    children.add(WidgetLineNode(widget));
+  }
+}
+
+abstract class LineNode {}
+
+class TextSpanNode implements LineNode {
+  const TextSpanNode(this.span);
+
+  final TextSpan span;
+}
+
+class WidgetLineNode implements LineNode {
+  const WidgetLineNode(this.widget);
+
+  final Widget widget;
+}
+
+class ReducedLine {
+  ReducedLine(this.primary,
+      {this.embed, this.position = EmbedPosition.leading});
+
+  ReducedLine.split(this.primary, this.embed,
+      {this.position = EmbedPosition.leading});
+
+  final Widget primary;
+  final Widget? embed;
+  final EmbedPosition position;
+}
+
+typedef LineBuilder = ReducedLine Function(
+  BuildContext context,
+  LineNodes content, {
+  required TextAlign textAlign,
+  required TextDirection textDirection,
+  required StrutStyle strutStyle,
+  required double textScaleFactor,
+});
 
 typedef CustomStyleBuilder = TextStyle Function(Attribute attribute);
 

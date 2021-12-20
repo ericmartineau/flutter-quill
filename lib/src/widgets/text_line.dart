@@ -1,77 +1,72 @@
 import 'dart:collection';
 import 'dart:math' as math;
 
+import 'package:boxy/render_boxy.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:flutter_quill/src/widgets/default_styles.dart';
+import 'package:flutter_quill/src/widgets/extensions.dart';
+import 'package:flutter_quill/src/widgets/floating_text.dart';
 import 'package:tuple/tuple.dart';
 
-import '../models/documents/attribute.dart';
 import '../models/documents/nodes/container.dart' as container;
 import '../models/documents/nodes/leaf.dart' as leaf;
-import '../models/documents/nodes/leaf.dart';
 import '../models/documents/nodes/line.dart';
 import '../models/documents/nodes/node.dart';
 import '../utils/color.dart';
 import 'box.dart';
 import 'cursor.dart';
-import 'default_styles.dart';
-import 'delegate.dart';
-import 'proxy.dart';
 import 'text_selection.dart';
 
-class TextLine extends StatelessWidget {
+class TextLine {
   const TextLine({
     required this.line,
     required this.embedBuilder,
+    required this.leafReducer,
     required this.styles,
     required this.readOnly,
     this.textDirection,
     this.customStyleBuilder,
     Key? key,
-  }) : super(key: key);
+  });
 
   final Line line;
   final TextDirection? textDirection;
   final EmbedBuilder embedBuilder;
+  final LineBuilder leafReducer;
   final DefaultStyles styles;
   final bool readOnly;
   final CustomStyleBuilder? customStyleBuilder;
 
-  @override
-  Widget build(BuildContext context) {
+  ReducedLine build(BuildContext context) {
     assert(debugCheckHasMediaQuery(context));
     if (line.hasEmbed && line.childCount == 1) {
       // For video, it is always single child
       final embed = line.children.single as Embed;
-      return EmbedProxy(embedBuilder(context, embed, readOnly));
+      return ReducedLine(embedBuilder(context, embed, readOnly));
     }
-    final textSpan = _getTextSpanForWholeLine(context);
-    final strutStyle = StrutStyle.fromTextStyle(textSpan.style!);
+    final reducedLine = _getTextSpanForWholeLine(context);
+    final strutStyle = StrutStyle.fromTextStyle(reducedLine.lineStyle);
     final textAlign = _getTextAlign();
-    final child = RichText(
-      text: textSpan,
-      textAlign: textAlign,
-      textDirection: textDirection,
+    final reducedWidget = leafReducer(
+      context,
+      reducedLine,
       strutStyle: strutStyle,
+      textAlign: textAlign,
+      textDirection: textDirection ?? TextDirection.ltr,
       textScaleFactor: MediaQuery.textScaleFactorOf(context),
     );
-    return RichTextProxy(
-        child,
-        textSpan.style!,
-        textAlign,
-        textDirection!,
-        1,
-        Localizations.localeOf(context),
-        strutStyle,
-        TextWidthBasis.parent,
-        null);
+    return reducedWidget;
   }
 
-  InlineSpan _getTextSpanForWholeLine(BuildContext context) {
+  LineNodes _getTextSpanForWholeLine(BuildContext context) {
     final lineStyle = _getLineStyle(styles);
+    final reduced = LineNodes(lineStyle);
     if (!line.hasEmbed) {
-      return _buildTextSpan(styles, line.children, lineStyle);
+      reduced.addSpan(_buildTextSpan(styles, line.children, lineStyle));
+      return reduced;
     }
 
     // The line could contain more than one Embed & more than one Text
@@ -80,13 +75,16 @@ class TextLine extends StatelessWidget {
     for (final child in line.children) {
       if (child is Embed) {
         if (textNodes.isNotEmpty) {
-          textSpanChildren.add(_buildTextSpan(styles, textNodes, lineStyle));
+          final textSpan = _buildTextSpan(styles, textNodes, lineStyle);
+          reduced.addSpan(textSpan);
+          textSpanChildren.add(textSpan);
           textNodes = LinkedList<Node>();
         }
-        // Here it should be image
-        final embed = WidgetSpan(
-            child: EmbedProxy(embedBuilder(context, child, readOnly)));
+
+        final embeddedWidget = embedBuilder(context, child, readOnly);
+        final embed = WidgetSpan(child: EmbedProxy(embeddedWidget));
         textSpanChildren.add(embed);
+        reduced.addWidget(embeddedWidget);
         continue;
       }
 
@@ -95,10 +93,12 @@ class TextLine extends StatelessWidget {
     }
 
     if (textNodes.isNotEmpty) {
-      textSpanChildren.add(_buildTextSpan(styles, textNodes, lineStyle));
+      final trailingSpan = _buildTextSpan(styles, textNodes, lineStyle);
+      textSpanChildren.add(trailingSpan);
+      reduced.addSpan(trailingSpan);
     }
 
-    return TextSpan(style: lineStyle, children: textSpanChildren);
+    return reduced;
   }
 
   TextAlign _getTextAlign() {
@@ -117,9 +117,9 @@ class TextLine extends StatelessWidget {
 
   TextSpan _buildTextSpan(DefaultStyles defaultStyles, LinkedList<Node> nodes,
       TextStyle lineStyle) {
-    final children = nodes
-        .map((node) => _getTextSpanFromNode(defaultStyles, node))
-        .toList(growable: false);
+    final children = [
+      for (var node in nodes) _getTextSpanFromNode(defaultStyles, node),
+    ];
 
     return TextSpan(children: children, style: lineStyle);
   }
@@ -287,10 +287,12 @@ class TextLine extends StatelessWidget {
   }
 }
 
+enum EmbedPosition { leading, trailing }
+
 class EditableTextLine extends RenderObjectWidget {
   const EditableTextLine(
     this.line,
-    this.leading,
+    this.embed,
     this.body,
     this.indentWidth,
     this.verticalSpacing,
@@ -300,11 +302,13 @@ class EditableTextLine extends RenderObjectWidget {
     this.enableInteractiveSelection,
     this.hasFocus,
     this.devicePixelRatio,
-    this.cursorCont,
-  );
+    this.cursorCont, {
+    this.position = EmbedPosition.leading,
+  });
 
+  final EmbedPosition position;
   final Line line;
-  final Widget? leading;
+  final Widget? embed;
   final Widget body;
   final double indentWidth;
   final Tuple2 verticalSpacing;
@@ -323,6 +327,7 @@ class EditableTextLine extends RenderObjectWidget {
 
   @override
   RenderObject createRenderObject(BuildContext context) {
+    final padding = _getPadding();
     return RenderEditableTextLine(
         line,
         textDirection,
@@ -330,7 +335,7 @@ class EditableTextLine extends RenderObjectWidget {
         enableInteractiveSelection,
         hasFocus,
         devicePixelRatio,
-        _getPadding(),
+        padding,
         color,
         cursorCont);
   }
@@ -338,9 +343,10 @@ class EditableTextLine extends RenderObjectWidget {
   @override
   void updateRenderObject(
       BuildContext context, covariant RenderEditableTextLine renderObject) {
+    final padding = _getPadding();
     renderObject
       ..setLine(line)
-      ..setPadding(_getPadding())
+      ..setPadding(padding)
       ..setTextDirection(textDirection)
       ..setTextSelection(textSelection)
       ..setColor(color)
@@ -374,7 +380,7 @@ class RenderEditableTextLine extends RenderEditableBox {
   );
 
   RenderBox? _leading;
-  RenderContentProxyBox? _body;
+  RenderBox? _body;
   Line line;
   TextDirection textDirection;
   TextSelection textSelection;
@@ -388,7 +394,7 @@ class RenderEditableTextLine extends RenderEditableBox {
   bool? _containsCursor;
   List<TextBox>? _selectedRects;
   Rect? _caretPrototype;
-  final Map<TextLineSlot, RenderBox> children = <TextLineSlot, RenderBox>{};
+  final children = <TextLineSlot, RenderBox>{};
 
   Iterable<RenderBox> get _children sync* {
     if (_leading != null) {
@@ -491,8 +497,8 @@ class RenderEditableTextLine extends RenderEditableBox {
     _leading = _updateChild(_leading, l, TextLineSlot.LEADING);
   }
 
-  void setBody(RenderContentProxyBox? b) {
-    _body = _updateChild(_body, b, TextLineSlot.BODY) as RenderContentProxyBox?;
+  void setBody(RenderBox? b) {
+    _body = _updateChild(_body, b, TextLineSlot.BODY);
   }
 
   bool containsTextSelection() {
@@ -506,7 +512,10 @@ class RenderEditableTextLine extends RenderEditableBox {
   }
 
   RenderBox? _updateChild(
-      RenderBox? old, RenderBox? newChild, TextLineSlot slot) {
+    RenderBox? old,
+    RenderBox? newChild,
+    TextLineSlot slot,
+  ) {
     if (old != null) {
       dropChild(old);
       children.remove(slot);
@@ -520,7 +529,7 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   List<TextBox> _getBoxes(TextSelection textSelection) {
     final parentData = _body!.parentData as BoxParentData?;
-    return _body!.getBoxesForSelection(textSelection).map((box) {
+    return _bodyProxyStar.getBoxesForSelection(textSelection).map((box) {
       return TextBox.fromLTRBD(
         box.left + parentData!.offset.dx,
         box.top + parentData.offset.dy,
@@ -583,7 +592,7 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   Offset getOffsetForCaret(TextPosition position) {
-    return _body!.getOffsetForCaret(position, _caretPrototype) +
+    return _bodyProxyStar.getOffsetForCaret(position, _caretPrototype) +
         (_body!.parentData as BoxParentData).offset;
   }
 
@@ -613,18 +622,36 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   TextPosition getPositionForOffset(Offset offset) {
-    return _body!.getPositionForOffset(
-        offset - (_body!.parentData as BoxParentData).offset);
+    return _bodyProxyStar.getPositionForOffset(
+        offset - (_bodyProxyStar.parentData as BoxParentData).offset);
   }
 
   @override
   TextRange getWordBoundary(TextPosition position) {
-    return _body!.getWordBoundary(position);
+    return _bodyProxyStar.getWordBoundary(position);
   }
 
   @override
   double preferredLineHeight(TextPosition position) {
-    return _body!.getPreferredLineHeight();
+    return _bodyProxyStar.getPreferredLineHeight();
+  }
+
+  RenderContentProxyBox? get _bodyProxy {
+    if (_body == null) {
+      throw StateError('No value for _body');
+    } else {
+      return _body!.proxyBox;
+    }
+  }
+
+  RenderContentProxyBox get _bodyProxyStar {
+    if (_body == null) {
+      throw StateError('No value for _body');
+    } else {
+      return _body!.proxyBox != null
+          ? _body!.proxyBox!
+          : (throw StateError('No value for proxyBox'));
+    }
   }
 
   @override
@@ -711,9 +738,10 @@ class RenderEditableTextLine extends RenderEditableBox {
     _resolvePadding();
     final horizontalPadding = _resolvedPadding!.left + _resolvedPadding!.right;
     final verticalPadding = _resolvedPadding!.top + _resolvedPadding!.bottom;
-    final leadingWidth = _leading == null
+    final start = _leading;
+    final leadingWidth = start == null
         ? 0
-        : _leading!.getMinIntrinsicWidth(height - verticalPadding).ceil();
+        : start.getMinIntrinsicWidth(height - verticalPadding).ceil();
     final bodyWidth = _body == null
         ? 0
         : _body!
@@ -727,9 +755,10 @@ class RenderEditableTextLine extends RenderEditableBox {
     _resolvePadding();
     final horizontalPadding = _resolvedPadding!.left + _resolvedPadding!.right;
     final verticalPadding = _resolvedPadding!.top + _resolvedPadding!.bottom;
-    final leadingWidth = _leading == null
+    final start = _leading;
+    final leadingWidth = start == null
         ? 0
-        : _leading!.getMaxIntrinsicWidth(height - verticalPadding).ceil();
+        : start.getMaxIntrinsicWidth(height - verticalPadding).ceil();
     final bodyWidth = _body == null
         ? 0
         : _body!
@@ -743,12 +772,18 @@ class RenderEditableTextLine extends RenderEditableBox {
     _resolvePadding();
     final horizontalPadding = _resolvedPadding!.left + _resolvedPadding!.right;
     final verticalPadding = _resolvedPadding!.top + _resolvedPadding!.bottom;
+    var height = 0.0;
     if (_body != null) {
-      return _body!
-              .getMinIntrinsicHeight(math.max(0, width - horizontalPadding)) +
-          verticalPadding;
+      height =
+          _body!.getMinIntrinsicHeight(math.max(0, width - horizontalPadding));
     }
-    return verticalPadding;
+    final start = _leading;
+    if (start != null) {
+      height = math.max(height,
+          start.getMinIntrinsicHeight(math.max(0, width - horizontalPadding)));
+    }
+
+    return height + verticalPadding;
   }
 
   @override
@@ -756,12 +791,17 @@ class RenderEditableTextLine extends RenderEditableBox {
     _resolvePadding();
     final horizontalPadding = _resolvedPadding!.left + _resolvedPadding!.right;
     final verticalPadding = _resolvedPadding!.top + _resolvedPadding!.bottom;
+    var height = 0.0;
     if (_body != null) {
-      return _body!
-              .getMaxIntrinsicHeight(math.max(0, width - horizontalPadding)) +
-          verticalPadding;
+      height =
+          _body!.getMaxIntrinsicHeight(math.max(0, width - horizontalPadding));
     }
-    return verticalPadding;
+    final start = _leading;
+    if (start != null) {
+      height = math.max(height,
+          start.getMaxIntrinsicHeight(math.max(0, width - horizontalPadding)));
+    }
+    return height + verticalPadding;
   }
 
   @override
@@ -786,36 +826,33 @@ class RenderEditableTextLine extends RenderEditableBox {
       ));
       return;
     }
-    final innerConstraints = constraints.deflate(_resolvedPadding!);
 
-    final indentWidth = textDirection == TextDirection.ltr
-        ? _resolvedPadding!.left
-        : _resolvedPadding!.right;
-
-    _body!.layout(innerConstraints, parentUsesSize: true);
-    (_body!.parentData as BoxParentData).offset =
-        Offset(_resolvedPadding!.left, _resolvedPadding!.top);
+    final looseConstraints = BoxConstraints.loose(
+      Size(constraints.maxWidth, constraints.maxHeight),
+    );
+    var leadingSize = Rect.zero;
 
     if (_leading != null) {
-      final leadingConstraints = innerConstraints.copyWith(
-          minWidth: indentWidth,
-          maxWidth: indentWidth,
-          maxHeight: _body!.size.height);
-      _leading!.layout(leadingConstraints, parentUsesSize: true);
-      (_leading!.parentData as BoxParentData).offset =
-          Offset(0, _resolvedPadding!.top);
+      _leading!.layout(looseConstraints, parentUsesSize: true);
+      leadingSize = _leading!.size.toRect();
     }
 
+    final parentData = _body!.floatingTextParentData();
+    parentData
+      ..rect = leadingSize
+      ..padding = _resolvedPadding ?? EdgeInsets.zero;
+    _body!.layout(looseConstraints, parentUsesSize: true);
+
     size = constraints.constrain(Size(
-      _resolvedPadding!.left + _body!.size.width + _resolvedPadding!.right,
-      _resolvedPadding!.top + _body!.size.height + _resolvedPadding!.bottom,
+      constraints.maxWidth,
+      math.max(leadingSize.height, _body!.size.height),
     ));
 
     _computeCaretPrototype();
   }
 
   CursorPainter get _cursorPainter => CursorPainter(
-        _body,
+        _bodyProxy,
         cursorCont.style,
         _caretPrototype!,
         cursorCont.color.value,
@@ -855,9 +892,9 @@ class RenderEditableTextLine extends RenderEditableBox {
           line.documentOffset <= textSelection.end &&
           textSelection.start <= line.documentOffset + line.length - 1) {
         final local = localSelection(line, textSelection, false);
-        _selectedRects ??= _body!.getBoxesForSelection(
-          local,
-        );
+        if (_body?.proxyBox != null) {
+          _selectedRects ??= _body!.proxyBoxStar.getBoxesForSelection(local);
+        }
         _paintSelection(context, effectiveOffset);
       }
     }
@@ -952,7 +989,7 @@ class _TextLineElement extends RenderObjectElement {
   @override
   void mount(Element? parent, dynamic newSlot) {
     super.mount(parent, newSlot);
-    _mountChild(widget.leading, TextLineSlot.LEADING);
+    _mountChild(widget.embed, TextLineSlot.LEADING);
     _mountChild(widget.body, TextLineSlot.BODY);
   }
 
@@ -960,13 +997,12 @@ class _TextLineElement extends RenderObjectElement {
   void update(EditableTextLine newWidget) {
     super.update(newWidget);
     assert(widget == newWidget);
-    _updateChild(widget.leading, TextLineSlot.LEADING);
+    _updateChild(widget.embed, TextLineSlot.LEADING);
     _updateChild(widget.body, TextLineSlot.BODY);
   }
 
   @override
   void insertRenderObjectChild(RenderBox child, TextLineSlot? slot) {
-    // assert(child is RenderBox);
     _updateRenderObject(child, slot);
     assert(renderObject.children.keys.contains(slot));
   }
@@ -1002,7 +1038,7 @@ class _TextLineElement extends RenderObjectElement {
         renderObject.setLeading(child);
         break;
       case TextLineSlot.BODY:
-        renderObject.setBody(child as RenderContentProxyBox?);
+        renderObject.setBody(child);
         break;
       default:
         throw UnimplementedError();
@@ -1018,5 +1054,193 @@ class _TextLineElement extends RenderObjectElement {
     if (newChild != null) {
       _slotToChildren[slot] = newChild;
     }
+  }
+}
+
+class SplitTextContentProxy implements RenderContentProxyBox {
+  SplitTextContentProxy({
+    required this.first,
+    required this.embedRect,
+    required this.padding,
+    this.second,
+    this.splitOffset,
+  });
+
+  final EdgeInsets padding;
+  final Rect embedRect;
+  final RenderParagraph first;
+  final RenderParagraph? second;
+  final int? splitOffset;
+
+  @override
+  dynamic get parentData => first.parentData;
+
+  bool isBeforeSplit(TextPosition position) {
+    return splitOffset == null ? true : position.offset < splitOffset!;
+  }
+
+  bool isAfterSplit(TextPosition position) {
+    return splitOffset == null ? false : position.offset > splitOffset!;
+  }
+
+  @override
+  List<TextBox> getBoxesForSelection(TextSelection textSelection) {
+    final boxes = <TextBox>[];
+    if (isBeforeSplit(textSelection.base)) {
+      if (isBeforeSplit(textSelection.extent)) {
+        // The whole thing is in the first
+        return first
+            .getBoxesForSelection(textSelection)
+            .translate(dx: embedRect.width);
+      } else {
+        boxes.addAll(
+          first
+              .getBoxesForSelection(
+                textSelection.copyWith(extentOffset: splitOffset!),
+              )
+              .translate(dx: embedRect.width),
+        );
+      }
+    }
+    if (second != null) {
+      final adjusted = textSelection.copyWith(
+        baseOffset: math.max(0, textSelection.baseOffset - splitOffset!),
+        extentOffset: textSelection.extentOffset - splitOffset!,
+      );
+      boxes.addAll(
+        second!.getBoxesForSelection(adjusted).translate(dy: offsetHeight),
+      );
+    }
+    return boxes;
+  }
+
+  double get offsetWidth {
+    return embedRect.width + padding.right;
+  }
+
+  double get offsetHeight {
+    return embedRect.height + padding.bottom;
+  }
+
+  @override
+  double? getFullHeightForCaret(TextPosition position) {
+    return first.getFullHeightForCaret(position);
+  }
+
+  TextPosition _secondPosition(TextPosition global) {
+    return TextPosition(
+      offset: global.offset - splitOffset!,
+      affinity: global.affinity,
+    );
+  }
+
+  @override
+  Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype) {
+    if (isAfterSplit(position)) {
+      return second!
+          .getOffsetForCaret(_secondPosition(position), caretPrototype!)
+          .translate(0, offsetHeight);
+    } else {
+      return first
+          .getOffsetForCaret(position, caretPrototype!)
+          .translate(offsetWidth, 0);
+    }
+  }
+
+  @override
+  TextPosition getPositionForOffset(Offset offset) {
+    if (offsetHeight > 0 && offset.dy > offsetHeight) {
+      final secondPos = second!.getPositionForOffset(
+        offset.translate(0, -offsetHeight),
+      );
+      return TextPosition(
+        offset: secondPos.offset + splitOffset!,
+        affinity: secondPos.affinity,
+      );
+    } else {
+      return first.getPositionForOffset(offset.translate(-offsetWidth, 0));
+    }
+  }
+
+  @override
+  double getPreferredLineHeight() {
+    return getFullHeightForCaret(const TextPosition(offset: 0)) ?? 0;
+  }
+
+  @override
+  TextRange getWordBoundary(TextPosition position) {
+    if (isAfterSplit(position)) {
+      return second!.getWordBoundary(_secondPosition(position));
+    } else {
+      return first.getWordBoundary(position);
+    }
+  }
+
+  @override
+  Offset localToGlobal(Offset local) {
+    if (offsetHeight > 0 && local.dy > offsetHeight) {
+      return second!.localToGlobal(local);
+    } else {
+      return first.localToGlobal(local);
+    }
+  }
+}
+
+extension RenderBoxToProxyBox on RenderBox {
+  RenderContentProxyBox? get proxyBox {
+    final child = this;
+    if (child is RenderContentProxyBox) return (child as RenderContentProxyBox);
+    if (child is RenderBoxy) {
+      final first = child.childHandleMap[#first]?.render as RenderParagraph?;
+      final second = child.childHandleMap[#second]?.render as RenderParagraph?;
+
+      if (first != null) {
+        return SplitTextContentProxy(
+          embedRect: floatingTextParentData().actualRect,
+          padding: floatingTextParentData().padding,
+          first: first,
+          second: second,
+          splitOffset: second == null ? null : first.text.toPlainText().length,
+        );
+      }
+    }
+    return null;
+  }
+
+  RenderContentProxyBox get proxyBoxStar {
+    final child = this;
+    if (child is RenderContentProxyBox) return (child as RenderContentProxyBox);
+    if (child is RenderBoxy) {
+      final _first = child.childHandleMap[#first]?.render;
+      if (_first != null && _first is! RenderParagraph) {
+        throw StateError(
+            'Expected RenderParagraph but got ${_first.runtimeType}');
+      }
+      final first = _first as RenderParagraph;
+      final second = child.childHandleMap[#second]?.render as RenderParagraph?;
+
+      return SplitTextContentProxy(
+        first: first,
+        embedRect: floatingTextParentData().actualRect,
+        padding: floatingTextParentData().padding,
+        second: second,
+        splitOffset: second == null ? null : first.text.toPlainText().length,
+      );
+    }
+    throw StateError('Unable to find RenderContentProxyBox');
+  }
+}
+
+extension RenderObjectExt on RenderObject {
+  P parentAs<P extends ParentData>([P Function()? factory]) {
+    return parentAsOrNull(factory) as P;
+  }
+
+  P? parentAsOrNull<P extends ParentData>([P Function()? factory]) {
+    if (parentData is! P && factory != null) {
+      parentData = factory();
+    }
+
+    return parentData is P ? parentData as P? : null;
   }
 }

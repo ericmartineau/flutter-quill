@@ -59,6 +59,7 @@ class EditableTextBlock extends StatelessWidget {
       required this.enableInteractiveSelection,
       required this.hasFocus,
       required this.contentPadding,
+      required this.leafReducer,
       required this.embedBuilder,
       required this.cursorCont,
       required this.indentLevelCounts,
@@ -77,6 +78,7 @@ class EditableTextBlock extends StatelessWidget {
   final bool enableInteractiveSelection;
   final bool hasFocus;
   final EdgeInsets? contentPadding;
+  final LineBuilder leafReducer;
   final EmbedBuilder embedBuilder;
   final CustomStyleBuilder? customStyleBuilder;
   final CursorCont cursorCont;
@@ -117,28 +119,35 @@ class EditableTextBlock extends StatelessWidget {
     final count = block.children.length;
     final children = <Widget>[];
     var index = 0;
-    for (final line in Iterable.castFrom<dynamic, Line>(block.children)) {
+    for (final line in block.children.cast<Line>()) {
       index++;
+      final leading =
+          _buildLeading(context, line, index, indentLevelCounts, count);
+      final reduced = TextLine(
+        line: line,
+        textDirection: textDirection,
+        embedBuilder: embedBuilder,
+        customStyleBuilder: customStyleBuilder,
+        leafReducer: leafReducer,
+        styles: styles!,
+        readOnly: readOnly,
+      ).build(context);
+
       final editableTextLine = EditableTextLine(
-          line,
-          _buildLeading(context, line, index, indentLevelCounts, count),
-          TextLine(
-            line: line,
-            textDirection: textDirection,
-            embedBuilder: embedBuilder,
-            customStyleBuilder: customStyleBuilder,
-            styles: styles!,
-            readOnly: readOnly,
-          ),
-          _getIndentWidth(),
-          _getSpacingForLine(line, index, count, defaultStyles),
-          textDirection,
-          textSelection,
-          color,
-          enableInteractiveSelection,
-          hasFocus,
-          MediaQuery.of(context).devicePixelRatio,
-          cursorCont);
+        line,
+        reduced.embed ?? leading,
+        reduced.primary,
+        _getIndentWidth(),
+        _getSpacingForLine(line, index, count, defaultStyles),
+        textDirection,
+        textSelection,
+        color,
+        enableInteractiveSelection,
+        hasFocus,
+        MediaQuery.of(context).devicePixelRatio,
+        cursorCont,
+        position: reduced.position,
+      );
       children.add(editableTextLine);
     }
     return children.toList(growable: false);
