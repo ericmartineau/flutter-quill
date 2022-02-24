@@ -102,7 +102,7 @@ class RenderFloatingText extends RenderProxyBox
   }
 
   @override
-  double getPreferredLineHeight() {
+  double get preferredLineHeight {
     return _prototypePainter.preferredLineHeight;
   }
 

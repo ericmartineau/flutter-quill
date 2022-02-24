@@ -2,12 +2,21 @@ import 'package:flutter/rendering.dart';
 
 import '../models/documents/nodes/container.dart';
 
+/// A common interface to render boxes which represent a piece of rich text
+/// content.
+///
+/// See also:
+///   * [RenderParagraphProxy] implementation of this interface which wraps
+///     built-in [RenderParagraph]
+///   * [RenderEmbedProxy] implementation of this interface which wraps
+///     an arbitrary render box representing an embeddable object.
 abstract class RenderContentProxyBox {
-  dynamic get parentData;
+  double get preferredLineHeight;
 
-  double getPreferredLineHeight();
+  @override
+  ParentData? get parentData;
 
-  Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype);
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype);
 
   TextPosition getPositionForOffset(Offset offset);
 
@@ -15,19 +24,27 @@ abstract class RenderContentProxyBox {
 
   TextRange getWordBoundary(TextPosition position);
 
+  /// Returns a list of rects that bound the given selection.
+  ///
+  /// A given selection might have more than one rect if this text painter
+  /// contains bidirectional text because logically contiguous text might not be
+  /// visually contiguous.
+  ///
+  /// Valid only after [layout]
   List<TextBox> getBoxesForSelection(TextSelection textSelection);
 
-  Offset localToGlobal(Offset topLeft);
+  @override
+  Offset localToGlobal(Offset topLeft, {RenderObject? ancestor});
 }
 
 mixin DelegatingRenderContentProxyBox implements RenderContentProxyBox {
   RenderContentProxyBox get delegate;
 
   @override
-  double getPreferredLineHeight() => delegate.getPreferredLineHeight();
+  double get preferredLineHeight => delegate.preferredLineHeight;
 
   @override
-  Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype) =>
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) =>
       delegate.getOffsetForCaret(position, caretPrototype);
 
   @override
@@ -54,7 +71,7 @@ mixin DelegatingRenderContentProxyBox implements RenderContentProxyBox {
 /// [RenderContentProxyBox].
 abstract class RenderEditableBox extends RenderBox {
   /// The document node represented by this render box.
-  Container getContainer();
+  Container get container;
 
   /// Returns preferred line height at specified `position` in text.
   ///
@@ -150,4 +167,8 @@ abstract class RenderEditableBox extends RenderBox {
   /// Returns the [Rect] in local coordinates for the caret at the given text
   /// position.
   Rect getLocalRectForCaret(TextPosition position);
+
+  /// Returns the [Rect] of the caret prototype at the given text
+  /// position. [Rect] starts at origin.
+  Rect getCaretPrototype(TextPosition position);
 }

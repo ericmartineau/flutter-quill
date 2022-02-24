@@ -1,35 +1,9 @@
 import 'dart:math' as math;
+import 'dart:ui';
 
+import '../models/documents/attribute.dart';
+import '../models/documents/nodes/node.dart';
 import '../models/quill_delta.dart';
-
-const Set<int> WHITE_SPACE = {
-  0x9,
-  0xA,
-  0xB,
-  0xC,
-  0xD,
-  0x1C,
-  0x1D,
-  0x1E,
-  0x1F,
-  0x20,
-  0xA0,
-  0x1680,
-  0x2000,
-  0x2001,
-  0x2002,
-  0x2003,
-  0x2004,
-  0x2005,
-  0x2006,
-  0x2007,
-  0x2008,
-  0x2009,
-  0x200A,
-  0x202F,
-  0x205F,
-  0x3000
-};
 
 // Diff between two texts - old text and new text
 class Diff {
@@ -100,4 +74,12 @@ int getPositionDelta(Delta user, Delta actual) {
     }
   }
   return diff;
+}
+
+TextDirection getDirectionOfNode(Node node) {
+  final direction = node.style.attributes[Attribute.direction.key];
+  if (direction == Attribute.rtl) {
+    return TextDirection.rtl;
+  }
+  return TextDirection.ltr;
 }

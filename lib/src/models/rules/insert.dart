@@ -1,10 +1,13 @@
 import 'package:tuple/tuple.dart';
 
+import '../../models/documents/document.dart';
 import '../documents/attribute.dart';
+import '../documents/nodes/embeddable.dart';
 import '../documents/style.dart';
 import '../quill_delta.dart';
 import 'rule.dart';
 
+/// A heuristic rule for insert operations.
 abstract class InsertRule extends Rule {
   const InsertRule();
 
@@ -18,6 +21,10 @@ abstract class InsertRule extends Rule {
   }
 }
 
+/// Preserves line format when user splits the line into two.
+///
+/// This rule ignores scenarios when the line is split on its edge, meaning
+/// a newline is inserted at the beginning or the end of a line.
 class PreserveLineStyleOnSplitRule extends InsertRule {
   const PreserveLineStyleOnSplitRule();
 
@@ -87,12 +94,12 @@ class PreserveBlockStyleOnInsertRule extends InsertRule {
       return null;
     }
 
-    Map<String, dynamic>? resetStyle;
+    final resetStyle = <String, dynamic>{};
     // If current line had heading style applied to it we'll need to move this
     // style to the newly inserted line before it and reset style of the
     // original line.
     if (lineStyle.containsKey(Attribute.header.key)) {
-      resetStyle = Attribute.header.toJson();
+      resetStyle.addAll(Attribute.header.toJson());
     }
 
     // Go over each inserted line and ensure block style is applied.
@@ -108,12 +115,16 @@ class PreserveBlockStyleOnInsertRule extends InsertRule {
         delta.insert('\n', lineStyle.toJson());
       } else if (i < lines.length - 1) {
         // we don't want to insert a newline after the last chunk of text, so -1
-        delta.insert('\n', blockStyle);
+        final blockAttributes = blockStyle.isEmpty
+            ? null
+            : blockStyle.map<String, dynamic>((_, attribute) =>
+                MapEntry<String, dynamic>(attribute.key, attribute.value));
+        delta.insert('\n', blockAttributes);
       }
     }
 
     // Reset style of the original newline character if needed.
-    if (resetStyle != null) {
+    if (resetStyle.isNotEmpty) {
       delta
         ..retain(nextNewLine.item2!)
         ..retain((nextNewLine.item1!.data as String).indexOf('\n'))
@@ -198,6 +209,11 @@ class AutoExitBlockRule extends InsertRule {
   }
 }
 
+/// Resets format for a newly inserted line when insert occurred at the end
+/// of a line (right before a newline).
+///
+/// This handles scenarios when a new line is added when at the end of a
+/// heading line. The newly added line should be a regular paragraph.
 class ResetLineFormatOnNewLineRule extends InsertRule {
   const ResetLineFormatOnNewLineRule();
 
@@ -227,6 +243,8 @@ class ResetLineFormatOnNewLineRule extends InsertRule {
   }
 }
 
+/// Handles all format operations which manipulate embeds.
+/// This rule wraps line breaks around video, not image.
 class InsertEmbedsRule extends InsertRule {
   const InsertEmbedsRule();
 
@@ -234,6 +252,12 @@ class InsertEmbedsRule extends InsertRule {
   Delta? applyRule(Delta document, int index,
       {int? len, Object? data, Attribute? attribute}) {
     if (data is String) {
+      return null;
+    }
+
+    assert(data is Map);
+
+    if (!(data as Map).containsKey(BlockEmbed.videoType)) {
       return null;
     }
 
@@ -275,6 +299,133 @@ class InsertEmbedsRule extends InsertRule {
   }
 }
 
+/// Applies link format to text segments within the inserted text that matches
+/// the URL pattern.
+///
+/// The link attribute is applied as the user types.
+class AutoFormatMultipleLinksRule extends InsertRule {
+  const AutoFormatMultipleLinksRule();
+
+  /// Link pattern.
+  ///
+  /// This pattern is used to match a links within a text segment.
+  ///
+  /// It works for the following testing URLs:
+  // www.google.com
+  // http://google.com
+  // https://www.google.com
+  // http://beginner.example.edu/#act
+  // https://birth.example.net/beds/ants.php#bait
+  // http://example.com/babies
+  // https://www.example.com/
+  // https://attack.example.edu/?acoustics=blade&bed=bed
+  // http://basketball.example.com/
+  // https://birthday.example.com/birthday
+  // http://www.example.com/
+  // https://example.com/addition/action
+  // http://example.com/
+  // https://bite.example.net/#adjustment
+  // http://www.example.net/badge.php?bedroom=anger
+  // https://brass.example.com/?anger=branch&actor=amusement#adjustment
+  // http://www.example.com/?action=birds&brass=apparatus
+  // https://example.net/
+  // URL generator tool (https://www.randomlists.com/urls) is used.
+  static const _linkPattern =
+      r'(https?:\/\/|www\.)[\w-\.]+\.[\w-\.]+(\/([\S]+)?)?';
+  static final linkRegExp = RegExp(_linkPattern);
+
+  @override
+  Delta? applyRule(
+    Delta document,
+    int index, {
+    int? len,
+    Object? data,
+    Attribute? attribute,
+  }) {
+    // Only format when inserting text.
+    if (data is! String) return null;
+
+    // Get current text.
+    final entireText = Document.fromDelta(document).toPlainText();
+
+    // Get word before insertion.
+    final leftWordPart = entireText
+        // Keep all text before insertion.
+        .substring(0, index)
+        // Keep last paragraph.
+        .split('\n')
+        .last
+        // Keep last word.
+        .split(' ')
+        .last
+        .trimLeft();
+
+    // Get word after insertion.
+    final rightWordPart = entireText
+        // Keep all text after insertion.
+        .substring(index)
+        // Keep first paragraph.
+        .split('\n')
+        .first
+        // Keep first word.
+        .split(' ')
+        .first
+        .trimRight();
+
+    // Build the segment of affected words.
+    final affectedWords = '$leftWordPart$data$rightWordPart';
+
+    // Check for URL pattern.
+    final matches = linkRegExp.allMatches(affectedWords);
+
+    // If there are no matches, do not apply any format.
+    if (matches.isEmpty) return null;
+
+    // Build base delta.
+    // The base delta is a simple insertion delta.
+    final baseDelta = Delta()
+      ..retain(index)
+      ..insert(data);
+
+    // Get unchanged text length.
+    final unmodifiedLength = index - leftWordPart.length;
+
+    // Create formatter delta.
+    // The formatter delta will only include links formatting when needed.
+    final formatterDelta = Delta()..retain(unmodifiedLength);
+
+    var previousLinkEndRelativeIndex = 0;
+    for (final match in matches) {
+      // Get the size of the leading segment of text that is not part of the
+      // link.
+      final separationLength = match.start - previousLinkEndRelativeIndex;
+
+      // Get the identified link.
+      final link = affectedWords.substring(match.start, match.end);
+
+      // Keep the leading segment of text and add link with its proper
+      // attribute.
+      formatterDelta
+        ..retain(separationLength, Attribute.link.toJson())
+        ..retain(link.length, LinkAttribute(link).toJson());
+
+      // Update reference index.
+      previousLinkEndRelativeIndex = match.end;
+    }
+
+    // Get remaining text length.
+    final remainingLength = affectedWords.length - previousLinkEndRelativeIndex;
+
+    // Remove links from remaining non-link text.
+    formatterDelta.retain(remainingLength, Attribute.link.toJson());
+
+    // Build and return resulting change delta.
+    return baseDelta.compose(formatterDelta);
+  }
+}
+
+/// Applies link format to text segment (which looks like a link) when user
+/// inserts space character after it.
 class AutoFormatLinksRule extends InsertRule {
   const AutoFormatLinksRule();
 
@@ -314,6 +465,7 @@ class AutoFormatLinksRule extends InsertRule {
   }
 }
 
+/// Preserves inline styles when user inserts text inside formatted segment.
 class PreserveInlineStylesRule extends InsertRule {
   const PreserveInlineStylesRule();
 
@@ -359,6 +511,7 @@ class PreserveInlineStylesRule extends InsertRule {
   }
 }
 
+/// Fallback rule which simply inserts text as-is without any special handling.
 class CatchAllInsertRule extends InsertRule {
   const CatchAllInsertRule();
 

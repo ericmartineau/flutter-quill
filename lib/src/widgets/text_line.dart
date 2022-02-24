@@ -11,13 +11,14 @@ import 'package:flutter_quill/src/widgets/extensions.dart';
 import 'package:flutter_quill/src/widgets/floating_text.dart';
 import 'package:tuple/tuple.dart';
 
-import '../models/documents/nodes/container.dart' as container;
+import '../models/documents/nodes/container.dart' as ctr;
 import '../models/documents/nodes/leaf.dart' as leaf;
 import '../models/documents/nodes/line.dart';
 import '../models/documents/nodes/node.dart';
 import '../utils/color.dart';
 import 'box.dart';
 import 'cursor.dart';
+import 'link.dart';
 import 'text_selection.dart';
 
 class TextLine {
@@ -27,17 +28,23 @@ class TextLine {
     required this.leafReducer,
     required this.styles,
     required this.readOnly,
+    required this.controller,
     this.textDirection,
+    this.linkActionPicker,
+    this.onLaunchUrl,
     this.customStyleBuilder,
     Key? key,
   });
 
   final Line line;
+  final LinkActionPicker? linkActionPicker;
+  final ValueChanged<String>? onLaunchUrl;
   final TextDirection? textDirection;
   final EmbedBuilder embedBuilder;
   final LineBuilder leafReducer;
   final DefaultStyles styles;
   final bool readOnly;
+  final QuillController controller;
   final CustomStyleBuilder? customStyleBuilder;
 
   ReducedLine build(BuildContext context) {
@@ -45,7 +52,7 @@ class TextLine {
     if (line.hasEmbed && line.childCount == 1) {
       // For video, it is always single child
       final embed = line.children.single as Embed;
-      return ReducedLine(embedBuilder(context, embed, readOnly));
+      return ReducedLine(embedBuilder(context, controller, embed, readOnly));
     }
     final reducedLine = _getTextSpanForWholeLine(context);
     final strutStyle = StrutStyle.fromTextStyle(reducedLine.lineStyle);
@@ -81,7 +88,8 @@ class TextLine {
           textNodes = LinkedList<Node>();
         }
 
-        final embeddedWidget = embedBuilder(context, child, readOnly);
+        final embeddedWidget =
+            embedBuilder(context, controller, child, readOnly);
         final embed = WidgetSpan(child: EmbedProxy(embeddedWidget));
         textSpanChildren.add(embed);
         reduced.addWidget(embeddedWidget);
@@ -193,7 +201,7 @@ class TextLine {
       Attribute.link.key: defaultStyles.link,
       Attribute.underline.key: defaultStyles.underline,
       Attribute.strikeThrough.key: defaultStyles.strikeThrough,
-      Attribute.inlineCode.key: defaultStyles.inlineCode,
+      // Attribute.inlineCode.key: defaultStyles.inlineCode,
     }.forEach((k, s) {
       if (style.values.any((v) => v.key == k)) {
         if (k == Attribute.underline.key || k == Attribute.strikeThrough.key) {
@@ -592,7 +600,7 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   Offset getOffsetForCaret(TextPosition position) {
-    return _bodyProxyStar.getOffsetForCaret(position, _caretPrototype) +
+    return _bodyProxyStar.getOffsetForCaret(position, _caretPrototype!) +
         (_body!.parentData as BoxParentData).offset;
   }
 
@@ -633,7 +641,7 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   double preferredLineHeight(TextPosition position) {
-    return _bodyProxyStar.getPreferredLineHeight();
+    return _bodyProxyStar.preferredLineHeight;
   }
 
   RenderContentProxyBox? get _bodyProxy {
@@ -655,7 +663,7 @@ class RenderEditableTextLine extends RenderEditableBox {
   }
 
   @override
-  container.Container getContainer() {
+  ctr.Container get container {
     return line;
   }
 
@@ -852,11 +860,11 @@ class RenderEditableTextLine extends RenderEditableBox {
   }
 
   CursorPainter get _cursorPainter => CursorPainter(
-        _bodyProxy,
-        cursorCont.style,
-        _caretPrototype!,
-        cursorCont.color.value,
-        devicePixelRatio,
+        editable: _bodyProxy,
+        style: cursorCont.style,
+        prototype: _caretPrototype!,
+        color: cursorCont.color.value,
+        devicePixelRatio: devicePixelRatio,
       );
 
   @override
@@ -943,10 +951,10 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   TextPosition globalToLocalPosition(TextPosition position) {
-    assert(getContainer().containsOffset(position.offset),
+    assert(container.containsOffset(position.offset),
         'The provided text position is not in the current node');
     return TextPosition(
-      offset: position.offset - getContainer().documentOffset,
+      offset: position.offset - container.documentOffset,
       affinity: position.affinity,
     );
   }
@@ -957,6 +965,11 @@ class RenderEditableTextLine extends RenderEditableBox {
       return;
     }
     markNeedsPaint();
+  }
+
+  @override
+  Rect getCaretPrototype(TextPosition position) {
+    return _caretPrototype!;
   }
 }
 
@@ -1057,7 +1070,7 @@ class _TextLineElement extends RenderObjectElement {
   }
 }
 
-class SplitTextContentProxy implements RenderContentProxyBox {
+class SplitTextContentProxy extends RenderContentProxyBox {
   SplitTextContentProxy({
     required this.first,
     required this.embedRect,
@@ -1073,7 +1086,7 @@ class SplitTextContentProxy implements RenderContentProxyBox {
   final int? splitOffset;
 
   @override
-  dynamic get parentData => first.parentData;
+  ParentData? get parentData => first.parentData;
 
   bool isBeforeSplit(TextPosition position) {
     return splitOffset == null ? true : position.offset < splitOffset!;
@@ -1163,7 +1176,7 @@ class SplitTextContentProxy implements RenderContentProxyBox {
   }
 
   @override
-  double getPreferredLineHeight() {
+  double get preferredLineHeight {
     return getFullHeightForCaret(const TextPosition(offset: 0)) ?? 0;
   }
 
@@ -1177,12 +1190,17 @@ class SplitTextContentProxy implements RenderContentProxyBox {
   }
 
   @override
-  Offset localToGlobal(Offset local) {
+  Offset localToGlobal(Offset local, {RenderObject? ancestor}) {
     if (offsetHeight > 0 && local.dy > offsetHeight) {
       return second!.localToGlobal(local);
     } else {
       return first.localToGlobal(local);
     }
+  }
+
+  @override
+  String toString({DiagnosticLevel minLevel = DiagnosticLevel.info}) {
+    return "Hello?";
   }
 }
 

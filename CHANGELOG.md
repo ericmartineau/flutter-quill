@@ -1,3 +1,217 @@
+# [4.0.5]
+* Fixed casting null to Tuple2 when link dialog is dismissed without any input (e.g. barrier dismissed).
+
+# [4.0.4]
+* Bug fix for text direction rtl.
+
+# [4.0.3]
+* Support text direction rtl.
+
+# [4.0.2]
+* Clear toggled style on selection change.
+
+# [4.0.1]
+* Fix copy/cut/paste/selectAll not working.
+
+# [4.0.0]
+* Upgrade for Flutter 2.10.
+
+# [3.9.11]
+* Added Indonesian translation.
+
+# [3.9.10]
+* Fix for undoing a modification ending with an indented line.
+
+# [3.9.9]
+* iOS: Save image whose filename does not end with image file extension.
+
+# [3.9.8]
+* Added Urdu translation.
+
+# [3.9.7]
+* Fix for clicking on the Link button without any text on a new line crashes.
+
+# [3.9.6]
+* Apply locale to QuillEditor(contents).
+
+# [3.9.5]
+* Fix image pasting.
+
+# [3.9.4]
+* Hiding dialog after selecting action for image.
+
+# [3.9.3]
+* Update ImageResizer for Android.
+
+# [3.9.2]
+* Copy image with its style.
+
+# [3.9.1]
+* Support resizing image.
+
+# [3.9.0]
+* Image menu options for copy/remove.
+
+# [3.8.8]
+* Update set textEditingValue.
+
+# [3.8.7]
+* Fix checkbox not toggled correctly in toolbar button.
+
+# [3.8.6]
+* Fix cursor position changes when checking/unchecking the checkbox.
+
+# [3.8.5]
+* Fix _handleDragUpdate in _TextSelectionHandleOverlayState.
+
+# [3.8.4]
+* Fix link dialog layout.
+
+# [3.8.3]
+* Fix for errors on a non scrollable editor.
+
+# [3.8.2]
+* Fix certain keys not working on web when editor is a child of a scroll view.
+
+# [3.8.1]
+* Refactor _QuillEditorState to QuillEditorState.
+
+# [3.8.0]
+* Support pasting with format.
+
+# [3.7.3]
+* Fix selection overlay for collapsed selection.
+
+# [3.7.2]
+* Reverted Embed toPlainText change.
+
+# [3.7.1]
+* Change Embed toPlainText to be empty string.
+
+# [3.7.0]
+* Replace Toolbar showHistory group with individual showRedo and showUndo.
+
+# [3.6.5]
+* Update Link dialogue for image/video.
+
+# [3.6.4]
+* Link dialogue TextInputType.multiline.
+
+# [3.6.3]
+* Bug fix for link button text selection.
+
+# [3.6.2]
+* Improve link button.
+
+# [3.6.1]
+* Remove SnackBar 'What is entered is not a link'.
+
+# [3.6.0]
+* Allow link button to enter text.
+
+# [3.5.3]
+* Change link button behavior.
+
+# [3.5.2]
+* Bug fix for embed.
+
+# [3.5.1]
+* Bug fix for platform util.
+
+# [3.5.0]
+* Removed redundant classes.
+
+# [3.4.4]
+* Add more translations.
+
+# [3.4.3]
+* Preset link from attributes.
+
+# [3.4.2]
+* Fix launch link edit mode.
+
+# [3.4.1]
+* Placeholder effective in scrollable.
+
+# [3.4.0]
+* Option to save image in read-only mode.
+
+# [3.3.1]
+* Pass any specified key in QuillEditor constructor to super.
+
+# [3.3.0]
+* Fixed Style toggle issue.
+
+# [3.2.1]
+* Added new translations.
+
+# [3.2.0]
+* Support multiple links insertion on the go.
+
+# [3.1.1]
+* Add selection completed callback.
+
+# [3.1.0]
+* Fixed image ontap functionality.
+
+# [3.0.4]
+* Add maxContentWidth constraint to editor.
+
+# [3.0.3]
+* Do not show caret on screen when the editor is not focused.
+
+# [3.0.2]
+* Fix launch link for read-only mode.
+
+## [3.0.1]
+* Handle null value of Attribute.link.
+
+## [3.0.0]
+* Launch link improvements.
+* Removed QuillSimpleViewer.
+
+## [2.5.2]
+* Skip image when pasting.
+
+## [2.5.1]
+* Bug fix for Desktop `Shift` + `Click` support.
+
+## [2.5.0]
+* Update checkbox list.
+
+## [2.4.1]
+* Desktop selection improvements.
+
+## [2.4.0]
+* Improve inline code style.
+
+## [2.3.3]
+* Improves selection rects to have consistent height regardless of individual segment text styles.
+
+## [2.3.2]
+* Allow disabling floating cursor.
+
+## [2.3.1]
+* Preserve last newline character on delete.
+
+## [2.3.0]
+* Massive changes to support flutter 2.8.
+
+## [2.2.2]
+* iOS - floating cursor.
+
+## [2.2.1]
+* Bug fix for imports supporting flutter 2.8.
+
+## [2.2.0]
+* Support flutter 2.8.
+
+## [2.1.1]
+* Add methods of clearing editor and moving cursor.
+
+## [2.1.0]
+* Add delete handler.
+
 ## [2.0.23]
 * Support custom replaceText handler.
 
