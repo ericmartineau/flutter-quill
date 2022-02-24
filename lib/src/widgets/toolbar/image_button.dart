@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../models/documents/nodes/embed.dart';
+import '../../models/documents/nodes/embeddable.dart';
 import '../../models/themes/quill_dialog_theme.dart';
 import '../../models/themes/quill_icon_theme.dart';
-import '../../utils/media_pick_setting.dart';
 import '../controller.dart';
-import '../link_dialog.dart';
 import '../toolbar.dart';
-import 'image_video_utils.dart';
-import 'quill_icon_button.dart';
 
 class ImageButton extends StatelessWidget {
   const ImageButton({

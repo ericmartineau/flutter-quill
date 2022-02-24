@@ -1,29 +1,83 @@
-import 'dart:math';
+import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../models/documents/document.dart';
+import '../../models/documents/nodes/leaf.dart';
+import '../../utils/delta.dart';
 import '../editor.dart';
 
 mixin RawEditorStateSelectionDelegateMixin on EditorState
     implements TextSelectionDelegate {
   @override
   TextEditingValue get textEditingValue {
-    return getTextEditingValue();
+    return widget.controller.plainTextEditingValue;
   }
 
   @override
   set textEditingValue(TextEditingValue value) {
-    setTextEditingValue(value);
+    final cursorPosition = value.selection.extentOffset;
+    final oldText = widget.controller.document.toPlainText();
+    final newText = value.text;
+    final diff = getDiff(oldText, newText, cursorPosition);
+    if (diff.deleted == '' && diff.inserted == '') {
+      // Only changing selection range
+      widget.controller.updateSelection(value.selection, ChangeSource.LOCAL);
+      return;
+    }
+
+    final insertedText = _adjustInsertedText(diff.inserted);
+
+    widget.controller.replaceText(
+        diff.start, diff.deleted.length, insertedText, value.selection);
+
+    _applyPasteStyle(insertedText, diff.start);
+  }
+
+  void _applyPasteStyle(String insertedText, int start) {
+    if (insertedText == pastePlainText && pastePlainText != '') {
+      final pos = start;
+      for (var i = 0; i < pasteStyle.length; i++) {
+        final offset = pasteStyle[i].item1;
+        final style = pasteStyle[i].item2;
+        widget.controller.formatTextStyle(
+            pos + offset,
+            i == pasteStyle.length - 1
+                ? pastePlainText.length - offset
+                : pasteStyle[i + 1].item1,
+            style);
+      }
+    }
+  }
+
+  String _adjustInsertedText(String text) {
+    // For clip from editor, it may contain image, a.k.a 65532 or '\uFFFC'.
+    // For clip from browser, image is directly ignore.
+    // Here we skip image when pasting.
+    if (!text.codeUnits.contains(Embed.kObjectReplacementInt)) {
+      return text;
+    }
+
+    final sb = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == Embed.kObjectReplacementInt) {
+        continue;
+      }
+      sb.write(text[i]);
+    }
+    return sb.toString();
   }
 
   @override
   void bringIntoView(TextPosition position) {
-    final localRect = getRenderEditor()!.getLocalRectForCaret(position);
+    final localRect = renderEditor.getLocalRectForCaret(position);
     final targetOffset = _getOffsetToRevealCaret(localRect, position);
 
-    scrollController.jumpTo(targetOffset.offset);
-    getRenderEditor()!.showOnScreen(rect: targetOffset.rect);
+    if (scrollController.hasClients) {
+      scrollController.jumpTo(targetOffset.offset);
+    }
+    renderEditor.showOnScreen(rect: targetOffset.rect);
   }
 
   // Finds the closest scroll offset to the current scroll offset that fully
@@ -36,11 +90,13 @@ mixin RawEditorStateSelectionDelegateMixin on EditorState
   // `renderEditable.preferredLineHeight`, before the target scroll offset is
   // calculated.
   RevealedOffset _getOffsetToRevealCaret(Rect rect, TextPosition position) {
-    if (!scrollController.position.allowImplicitScrolling) {
+    // Make sure scrollController is attached
+    if (scrollController.hasClients &&
+        !scrollController.position.allowImplicitScrolling) {
       return RevealedOffset(offset: scrollController.offset, rect: rect);
     }
 
-    final editableSize = getRenderEditor()!.size;
+    final editableSize = renderEditor.size;
     final double additionalOffset;
     final Offset unitOffset;
 
@@ -50,8 +106,7 @@ mixin RawEditorStateSelectionDelegateMixin on EditorState
     final expandedRect = Rect.fromCenter(
       center: rect.center,
       width: rect.width,
-      height:
-          max(rect.height, getRenderEditor()!.preferredLineHeight(position)),
+      height: math.max(rect.height, renderEditor.preferredLineHeight(position)),
     );
 
     additionalOffset = expandedRect.height >= editableSize.height
@@ -62,29 +117,33 @@ mixin RawEditorStateSelectionDelegateMixin on EditorState
 
     // No overscrolling when encountering tall fonts/scripts that extend past
     // the ascent.
-    final targetOffset = (additionalOffset + scrollController.offset).clamp(
-      scrollController.position.minScrollExtent,
-      scrollController.position.maxScrollExtent,
-    );
+    var targetOffset = additionalOffset;
+    if (scrollController.hasClients) {
+      targetOffset = (additionalOffset + scrollController.offset).clamp(
+        scrollController.position.minScrollExtent,
+        scrollController.position.maxScrollExtent,
+      );
+    }
 
-    final offsetDelta = scrollController.offset - targetOffset;
+    final offsetDelta =
+        (scrollController.hasClients ? scrollController.offset : 0) -
+            targetOffset;
     return RevealedOffset(
         rect: rect.shift(unitOffset * offsetDelta), offset: targetOffset);
   }
 
   @override
   void hideToolbar([bool hideHandles = true]) {
-    if (getSelectionOverlay()?.toolbar != null) {
-      getSelectionOverlay()?.hideToolbar();
+    // If the toolbar is currently visible.
+    if (selectionOverlay?.toolbar != null) {
+      selectionOverlay?.hideToolbar();
     }
   }
 
   @override
   void userUpdateTextEditingValue(
-    TextEditingValue value,
-    SelectionChangedCause cause,
-  ) {
-    setTextEditingValue(value);
+      TextEditingValue value, SelectionChangedCause cause) {
+    textEditingValue = value;
   }
 
   @override

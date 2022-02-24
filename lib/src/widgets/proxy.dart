@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -102,14 +104,12 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
   double getFullHeightForCaret(TextPosition position) => size.height;
 
   @override
-  Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype) {
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) {
     assert(
         position.offset == 1 || position.offset == 0 || position.offset == -1);
     return position.offset <= 0
         ? Offset.zero
-        : Offset(
-            size.width - (caretPrototype == null ? 0 : caretPrototype.width),
-            0);
+        : Offset(size.width - caretPrototype.width, 0);
   }
 
   @override
@@ -121,23 +121,23 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
       const TextRange(start: 0, end: 1);
 
   @override
-  double getPreferredLineHeight() {
-    return size.height;
-  }
+  double get preferredLineHeight => size.height;
 }
 
 class RichTextProxy extends SingleChildRenderObjectWidget {
+  /// Child argument should be an instance of RichText widget.
   const RichTextProxy(
-    RichText child,
-    this.textStyle,
-    this.textAlign,
-    this.textDirection,
-    this.textScaleFactor,
-    this.locale,
-    this.strutStyle,
-    this.textWidthBasis,
-    this.textHeightBehavior,
-  ) : super(child: child);
+      {required RichText child,
+      required this.textStyle,
+      required this.textAlign,
+      required this.textDirection,
+      required this.locale,
+      required this.strutStyle,
+      this.textScaleFactor = 1.0,
+      this.textWidthBasis = TextWidthBasis.parent,
+      this.textHeightBehavior,
+      Key? key})
+      : super(key: key, child: child);
 
   final TextStyle textStyle;
   final TextAlign textAlign;
@@ -270,13 +270,11 @@ class RenderParagraphProxy extends RenderProxyBox
   RenderParagraph? get child => super.child as RenderParagraph?;
 
   @override
-  double getPreferredLineHeight() {
-    return _prototypePainter.preferredLineHeight;
-  }
+  double get preferredLineHeight => _prototypePainter.preferredLineHeight;
 
   @override
-  Offset getOffsetForCaret(TextPosition position, Rect? caretPrototype) =>
-      child!.getOffsetForCaret(position, caretPrototype!);
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) =>
+      child!.getOffsetForCaret(position, caretPrototype);
 
   @override
   TextPosition getPositionForOffset(Offset offset) =>
@@ -291,8 +289,8 @@ class RenderParagraphProxy extends RenderProxyBox
       child!.getWordBoundary(position);
 
   @override
-  List<TextBox> getBoxesForSelection(TextSelection selection) =>
-      child!.getBoxesForSelection(selection);
+  List<TextBox> getBoxesForSelection(TextSelection selection) => child!
+      .getBoxesForSelection(selection, boxHeightStyle: BoxHeightStyle.strut);
 
   @override
   void performLayout() {

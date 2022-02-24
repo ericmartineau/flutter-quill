@@ -25,10 +25,11 @@ class UniversalUI {
 
 var ui = UniversalUI();
 
-Widget defaultEmbedBuilderWeb(BuildContext context, Embed node, bool readOnly) {
+Widget defaultEmbedBuilderWeb(BuildContext context, QuillController controller,
+    Embed node, bool readOnly) {
   switch (node.value.type) {
     case 'image':
-      final String imageUrl = node.value.data;
+      final imageUrl = node.value.data;
       final size = MediaQuery.of(context).size;
       UniversalUI().platformViewRegistry.registerViewFactory(
           imageUrl, (viewId) => html.ImageElement()..src = imageUrl);

@@ -6,7 +6,6 @@ import 'package:i18n_extension/i18n_widget.dart';
 import '../models/documents/attribute.dart';
 import '../models/themes/quill_dialog_theme.dart';
 import '../models/themes/quill_icon_theme.dart';
-import '../utils/media_pick_setting.dart';
 import 'controller.dart';
 import 'toolbar/arrow_indicated_button_list.dart';
 import 'toolbar/camera_button.dart';
@@ -14,8 +13,8 @@ import 'toolbar/clear_format_button.dart';
 import 'toolbar/color_button.dart';
 import 'toolbar/history_button.dart';
 import 'toolbar/image_button.dart';
+import 'toolbar/image_video_utils.dart';
 import 'toolbar/indent_button.dart';
-import 'toolbar/insert_embed_button.dart';
 import 'toolbar/link_style_button.dart';
 import 'toolbar/select_alignment_button.dart';
 import 'toolbar/select_header_style_button.dart';
@@ -23,13 +22,12 @@ import 'toolbar/toggle_check_list_button.dart';
 import 'toolbar/toggle_style_button.dart';
 import 'toolbar/video_button.dart';
 
-export '../utils/media_pick_setting.dart';
 export 'toolbar/clear_format_button.dart';
 export 'toolbar/color_button.dart';
 export 'toolbar/history_button.dart';
 export 'toolbar/image_button.dart';
+export 'toolbar/image_video_utils.dart';
 export 'toolbar/indent_button.dart';
-export 'toolbar/insert_embed_button.dart';
 export 'toolbar/link_style_button.dart';
 export 'toolbar/quill_dropdown_button.dart';
 export 'toolbar/quill_icon_button.dart';
@@ -96,12 +94,13 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
     bool showQuote = true,
     bool showIndent = true,
     bool showLink = true,
-    bool showHistory = true,
-    bool showHorizontalRule = false,
+    bool showUndo = true,
+    bool showRedo = true,
     bool multiRowsDisplay = true,
     bool showImageButton = true,
     bool showVideoButton = true,
     bool showCameraButton = true,
+    bool showDirection = false,
     OnImagePickCallback? onImagePickCallback,
     OnVideoPickCallback? onVideoPickCallback,
     MediaPickSettingSelector? mediaPickSettingSelector,
@@ -116,19 +115,13 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
     ///shown when embedding an image, for example
     QuillDialogTheme? dialogTheme,
 
-    ///The locale to use for the editor toolbar, defaults to system locale
-    ///Currently the supported locales are:
-    /// * Locale('en')
-    /// * Locale('de')
-    /// * Locale('fr')
-    /// * Locale('zh')
-    /// and more https://github.com/singerdmx/flutter-quill#translation-of-toolbar
+    /// The locale to use for the editor toolbar, defaults to system locale
+    /// More at https://github.com/singerdmx/flutter-quill#translation
     Locale? locale,
     Key? key,
   }) {
     final isButtonGroupShown = [
-      showHistory ||
-          showBoldButton ||
+      showBoldButton ||
           showItalicButton ||
           showSmallButton ||
           showUnderLineButton ||
@@ -139,7 +132,7 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
           showClearFormat ||
           onImagePickCallback != null ||
           onVideoPickCallback != null,
-      showAlignmentButtons,
+      showAlignmentButtons || showDirection,
       showLeftAlignment,
       showCenterAlignment,
       showRightAlignment,
@@ -147,7 +140,7 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
       showHeaderStyle,
       showListNumbers || showListBullets || showListCheck || showCodeBlock,
       showQuote || showIndent,
-      showLink || showHorizontalRule
+      showLink
     ];
 
     return QuillToolbar(
@@ -158,7 +151,7 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
       multiRowsDisplay: multiRowsDisplay,
       locale: locale,
       children: [
-        if (showHistory)
+        if (showUndo)
           HistoryButton(
             icon: Icons.undo_outlined,
             iconSize: toolbarIconSize,
@@ -166,7 +159,7 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
             undo: true,
             iconTheme: iconTheme,
           ),
-        if (showHistory)
+        if (showRedo)
           HistoryButton(
             icon: Icons.redo_outlined,
             iconSize: toolbarIconSize,
@@ -304,6 +297,14 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
             showRightAlignment: showRightAlignment,
             showJustifyAlignment: showJustifyAlignment,
           ),
+        if (showDirection)
+          ToggleStyleButton(
+            attribute: Attribute.rtl,
+            controller: controller,
+            icon: Icons.format_textdirection_r_to_l,
+            iconSize: toolbarIconSize,
+            iconTheme: iconTheme,
+          ),
         if (showDividers &&
             isButtonGroupShown[1] &&
             (isButtonGroupShown[2] ||
@@ -409,13 +410,6 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
             iconTheme: iconTheme,
             dialogTheme: dialogTheme,
           ),
-        if (showHorizontalRule)
-          InsertEmbedButton(
-            controller: controller,
-            icon: Icons.horizontal_rule,
-            iconSize: toolbarIconSize,
-            iconTheme: iconTheme,
-          ),
       ],
     );
   }
@@ -434,13 +428,8 @@ class QuillToolbar extends StatelessWidget implements PreferredSizeWidget {
 
   final FilePickImpl? filePickImpl;
 
-  ///The locale to use for the editor toolbar, defaults to system locale
-  ///Currently the supported locales are:
-  /// * Locale('en')
-  /// * Locale('de')
-  /// * Locale('fr')
-  /// * Locale('zh', 'CN')
-  /// and more https://github.com/singerdmx/flutter-quill#translation-of-toolbar
+  /// The locale to use for the editor toolbar, defaults to system locale
+  /// More https://github.com/singerdmx/flutter-quill#translation
   final Locale? locale;
 
   @override
