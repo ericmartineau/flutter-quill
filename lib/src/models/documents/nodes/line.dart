@@ -87,7 +87,7 @@ class Line extends Container<Leaf?> {
 
     final text = data as String;
     final lineBreak = text.indexOf('\n');
-    if (lineBreak < 0) {
+    if (!text.contains('\n')) {
       _insertSafe(index, text, style);
       // No need to update line or block format since those attributes can only
       // be attached to `\n` character and we already know it's not present.

@@ -16,6 +16,11 @@ import 'image_resizer.dart';
 import 'video_app.dart';
 import 'youtube_video_app.dart';
 
+double? doubleOf(dynamic value) {
+  if (value is double) return value;
+  return double.tryParse(value.toString());
+}
+
 Widget defaultEmbedBuilder(BuildContext context, QuillController controller,
     leaf.Embed node, bool readOnly) {
   assert(!kIsWeb, 'Please provide EmbedBuilder for Web');
@@ -26,6 +31,7 @@ Widget defaultEmbedBuilder(BuildContext context, QuillController controller,
       final imageUrl = standardizeImageUrl(node.value.data);
       var image;
       final style = node.style.attributes['style'];
+
       if (isMobile() && style != null) {
         final _attrs = parseKeyValuePairs(style.value.toString(), {
           Attribute.mobileWidth,
@@ -52,7 +58,10 @@ Widget defaultEmbedBuilder(BuildContext context, QuillController controller,
       }
 
       if (_widthHeight == null) {
-        image = imageByUrl(imageUrl);
+        final w = doubleOf(node.style.attributes[Attribute.width.key]?.value);
+        final h = doubleOf(node.style.attributes[Attribute.height.key]?.value);
+
+        image = imageByUrl(imageUrl, width: w, height: h);
         _widthHeight = Tuple2((image as Image).width, image.height);
       }
 

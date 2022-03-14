@@ -11,17 +11,21 @@ import 'package:tuple/tuple.dart';
 
 import '../models/documents/document.dart';
 import '../models/documents/nodes/container.dart' as container_node;
+import '../models/documents/nodes/line.dart';
 import '../models/documents/style.dart';
 import '../utils/platform.dart';
+import '../widgets/float/util.dart';
 import 'box.dart';
 import 'controller.dart';
 import 'cursor.dart';
 import 'default_styles.dart';
 import 'delegate.dart';
 import 'embeds/default_embed_builder.dart';
+import 'float/shared.dart';
 import 'float_cursor.dart';
 import 'link.dart';
 import 'raw_editor.dart';
+import 'render_editable_ext.dart';
 import 'text_selection.dart';
 
 /// Base interface for the editor state which defines contract used by
@@ -1145,26 +1149,40 @@ class RenderEditor extends RenderEditableContainerBox
     }());
 
     resolvePadding();
-    assert(resolvedPadding != null);
 
-    var mainAxisExtent = resolvedPadding!.top;
-    var child = firstChild;
+    var mainAxisExtent = resolvedPadding.top;
+    RenderBox? renderEditorChild = firstChild;
     final innerConstraints = BoxConstraints.tightFor(
             width: math.min(
                 _maxContentWidth ?? double.infinity, constraints.maxWidth))
-        .deflate(resolvedPadding!);
+        .deflate(resolvedPadding);
     final leftOffset = _maxContentWidth == null
         ? 0.0
         : math.max((constraints.maxWidth - _maxContentWidth!) / 2, 0);
-    while (child != null) {
-      child.layout(innerConstraints, parentUsesSize: true);
-      final childParentData = child.parentData as EditableContainerParentData
-        ..offset = Offset(resolvedPadding!.left + leftOffset, mainAxisExtent);
-      mainAxisExtent += child.size.height;
-      assert(child.parentData == childParentData);
-      child = childParentData.nextSibling;
+    var floats = FloatInput();
+
+    while (renderEditorChild != null) {
+      renderEditorChild.quillParent.startingFloats = floats;
+
+      renderEditorChild.layout(innerConstraints, parentUsesSize: true);
+      assert(renderEditorChild.quillParent.endingFloats != null,
+          "$renderEditorChild Didn't consume floats");
+      final endingFloats = renderEditorChild.quillParent.endingFloats;
+      assert(endingFloats != null, 'Child should have consumed floats');
+
+      final childParentData =
+          renderEditorChild.parentData as EditableContainerParentData;
+
+      childParentData.offset = endingFloats!.offset +
+          Offset(resolvedPadding.left + leftOffset, mainAxisExtent);
+
+      mainAxisExtent += endingFloats.height;
+      assert(renderEditorChild.parentData == childParentData);
+      renderEditorChild = childParentData.nextSibling;
+      floats = endingFloats.input();
     }
-    mainAxisExtent += resolvedPadding!.bottom;
+    // Append unconsumed floats
+    mainAxisExtent += resolvedPadding.bottom;
     size = constraints.constrain(Size(constraints.maxWidth, mainAxisExtent));
 
     assert(size.isFinite);
@@ -1493,7 +1511,8 @@ class RenderEditor extends RenderEditableContainerBox
       } else {
         final caretOffset = child.getOffsetForCaret(localPosition);
         final testPosition = TextPosition(offset: sibling.container.length - 1);
-        final testOffset = sibling.getOffsetForCaret(testPosition);
+        final testOffset =
+            sibling.getOffsetForCaret(testPosition, includeFloats: false);
         final finalOffset = Offset(caretOffset.dx, testOffset.dy);
         final siblingPosition = sibling.getPositionForOffset(finalOffset);
         newPosition = TextPosition(
@@ -1529,7 +1548,8 @@ class RenderEditor extends RenderEditableContainerBox
       } else {
         final caretOffset = child.getOffsetForCaret(localPosition);
         const testPosition = TextPosition(offset: 0);
-        final testOffset = sibling.getOffsetForCaret(testPosition);
+        final testOffset =
+            sibling.getOffsetForCaret(testPosition, includeFloats: false);
         final finalOffset = Offset(caretOffset.dx, testOffset.dy);
         final siblingPosition = sibling.getPositionForOffset(finalOffset);
         newPosition = TextPosition(
@@ -1588,8 +1608,171 @@ class QuillVerticalCaretMovementRun
   }
 }
 
+class Floats {
+  Floats({
+    this.yPosNext = 0.0,
+    this.yPosStart = 0.0,
+    this.prevBottomMargin = 0.0,
+    required this.clear,
+    required this.offset,
+    Iterable<Rect> floatL = const [],
+    Iterable<Rect> floatR = const [],
+  })  : floatL = [...floatL],
+        floatR = [...floatR];
+  final List<Rect> floatL;
+  final List<Rect> floatR;
+
+  Offset? offset;
+
+  // This gets updated to the y position for the next child.
+  double yPosNext;
+
+  // Any padding that was applied to the bottom of this box
+  double yPosStart;
+
+  final FCClear? clear;
+
+  // This gets updated to the previous non-floated child's bottom margin.
+  double prevBottomMargin;
+
+  bool get hasFloats => floatL.isNotEmpty || floatR.isNotEmpty;
+
+  FloatResult build() {
+    return FloatResult(
+        offset: offset ?? Offset(0, yPosNext),
+        floatL: floatL.minusHeight(yPosNext),
+        floatR: floatR.minusHeight(yPosNext),
+        prevBottomMargin: prevBottomMargin,
+        height: yPosNext);
+  }
+}
+
+class FloatResult {
+  FloatResult({
+    // required this.yPosStart,
+    /// The offset that should be applied to the element that returned this result
+    Offset? offset,
+    this.height = 0.0,
+    this.prevBottomMargin = 0.0,
+    Iterable<Rect> floatL = const [],
+    Iterable<Rect> floatR = const [],
+  })  : _offset = offset,
+        floatL = List.unmodifiable(floatL),
+        floatR = List.unmodifiable(floatR);
+  final Iterable<Rect> floatL;
+  final Iterable<Rect> floatR;
+
+  // This gets updated to the y position for the next child.
+  final double height;
+
+  // This gets updated to the previous non-floated child's bottom margin.
+  final double prevBottomMargin;
+
+  final Offset? _offset;
+  // final double yPosStart;
+  Offset get offset => _offset ?? Offset.zero;
+
+  double get yPosStart => _offset?.dy ?? 0.0;
+
+  /// If the next line starts with a float, then mark the starting xPos
+  double get xPosStart {
+    var start = 0.0;
+    for (final initFloat in floatL.where(
+        (element) => element.top <= yPosStart && element.bottom >= yPosStart)) {
+      start += initFloat.width;
+    }
+    return start;
+  }
+
+  FloatResult withPadding(EdgeInsets? padding) {
+    if (padding == null) return this;
+    final extra = padding.top + padding.bottom;
+    if (extra == 0) return this;
+    return FloatResult(
+      offset: offset,
+      // yPosStart: yPosStart,
+      height: height + extra,
+      prevBottomMargin: prevBottomMargin + padding.bottom,
+      floatL: floatL.minusHeight(extra),
+      floatR: floatR.minusHeight(extra),
+    );
+  }
+
+  FloatInput input() {
+    return FloatInput(
+        prevBottomMargin: prevBottomMargin, floatR: floatR, floatL: floatL);
+  }
+}
+
+class FloatInput {
+  FloatInput(
+      {Iterable<Rect> floatL = const [],
+      Iterable<Rect> floatR = const [],
+      this.clear,
+      this.prevBottomMargin = 0.0})
+      : floatL = List.unmodifiable(floatL),
+        floatR = List.unmodifiable(floatR);
+  final FCClear? clear;
+  final List<Rect> floatL;
+  final List<Rect> floatR;
+  double prevBottomMargin;
+
+  double get overflowY => [...floatL, ...floatR].maxYBelow(0);
+
+  double get xPosStart {
+    var start = 0.0;
+    for (final initFloat in floatL.where((element) => element.top == 0)) {
+      start += initFloat.width;
+    }
+    return start;
+  }
+
+  FloatInput cleared([bool cleared = true]) {
+    return FloatInput(
+      floatL: floatL,
+      floatR: floatR,
+      prevBottomMargin: prevBottomMargin,
+      clear: cleared ? FCClear.left : null,
+    );
+  }
+
+  Floats builder() {
+    return Floats(
+        floatL: floatL,
+        offset: Offset.zero,
+        clear: clear,
+        floatR: floatR,
+        prevBottomMargin: prevBottomMargin);
+  }
+
+  FloatResult build({required double height}) {
+    return FloatResult(
+        prevBottomMargin: prevBottomMargin,
+        floatL: floatL,
+        floatR: floatR,
+        height: height);
+  }
+}
+
+mixin RenderBoxParentDataMixin<ChildType extends RenderBox>
+    implements ContainerBoxParentData<ChildType> {
+  late FloatInput startingFloats;
+  FloatResult? endingFloats;
+  double? _scale;
+
+  double get scale => _scale ?? 1.0;
+
+  set scale(double scale) {
+    _scale = scale;
+  }
+}
+
 class EditableContainerParentData
-    extends ContainerBoxParentData<RenderEditableBox> {}
+    extends ContainerBoxParentData<RenderEditableBox>
+    with RenderBoxParentDataMixin<RenderEditableBox> {}
+
+class RenderBoxParentData extends ContainerBoxParentData<RenderBox>
+    with RenderBoxParentDataMixin {}
 
 /// Multi-child render box of editable content.
 ///
@@ -1639,7 +1822,7 @@ class RenderEditableContainerBox extends RenderBox
     _markNeedsPaddingResolution();
   }
 
-  EdgeInsets? get resolvedPadding => _resolvedPadding;
+  EdgeInsets get resolvedPadding => _resolvedPadding ?? EdgeInsets.zero;
 
   void resolvePadding() {
     if (_resolvedPadding != null) {
@@ -1654,7 +1837,8 @@ class RenderEditableContainerBox extends RenderBox
   RenderEditableBox childAtPosition(TextPosition position) {
     assert(firstChild != null);
 
-    final targetNode = container.queryChild(position.offset, false).node;
+    final targetNode =
+        container.queryChild(position.offset, false, withFloats: false).node;
 
     var targetChild = firstChild;
     while (targetChild != null) {
@@ -1723,19 +1907,29 @@ class RenderEditableContainerBox extends RenderBox
     assert(_resolvedPadding != null);
 
     var mainAxisExtent = _resolvedPadding!.top;
-    var child = firstChild;
+    var floats = quillParent.startingFloats;
+    var containerBoxChild = firstChild;
     final innerConstraints =
         BoxConstraints.tightFor(width: constraints.maxWidth)
             .deflate(_resolvedPadding!);
-    while (child != null) {
-      child.layout(innerConstraints, parentUsesSize: true);
-      final childParentData = (child.parentData as EditableContainerParentData)
+
+    while (containerBoxChild != null) {
+      final childData = containerBoxChild.quillParent;
+      childData.startingFloats = floats;
+      containerBoxChild.layout(innerConstraints, parentUsesSize: true);
+      final childEndingFloats = childData.endingFloats;
+      final childParentData = (containerBoxChild.parentData
+          as EditableContainerParentData)
         ..offset = Offset(_resolvedPadding!.left, mainAxisExtent);
-      mainAxisExtent += child.size.height;
-      assert(child.parentData == childParentData);
-      child = childParentData.nextSibling;
+
+      assert(childData.endingFloats != null, 'Must consume leftOverFloats');
+      mainAxisExtent += childEndingFloats!.height;
+      floats = childEndingFloats.input();
+      assert(containerBoxChild.parentData == childParentData);
+      containerBoxChild = childParentData.nextSibling;
     }
-    mainAxisExtent += _resolvedPadding!.bottom;
+    mainAxisExtent += _resolvedPadding!.bottom + floats.overflowY;
+    quillParent.endingFloats = floats.build(height: mainAxisExtent);
     size = constraints.constrain(Size(constraints.maxWidth, mainAxisExtent));
 
     assert(size.isFinite);

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:tuple/tuple.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../flutter_quill.dart';
 import '../models/documents/attribute.dart';
 import '../models/documents/nodes/container.dart' as container_node;
 import '../models/documents/nodes/leaf.dart';
@@ -22,13 +23,25 @@ import 'controller.dart';
 import 'cursor.dart';
 import 'default_styles.dart';
 import 'delegate.dart';
+import 'float/float_data.dart';
+import 'float/shared.dart';
+import 'float/wrappable_text.dart';
 import 'keyboard_listener.dart';
 import 'link.dart';
 import 'proxy.dart';
+import 'render_editable_ext.dart';
 import 'text_selection.dart';
+
+final _indentKeys = <Attribute>{
+  Attribute.indent,
+  Attribute.blockQuote,
+  Attribute.list,
+  Attribute.codeBlock,
+};
 
 class TextLine extends StatefulWidget {
   const TextLine({
+    required this.lineStyle,
     required this.line,
     required this.embedBuilder,
     required this.styles,
@@ -41,6 +54,7 @@ class TextLine extends StatefulWidget {
     Key? key,
   }) : super(key: key);
 
+  final TextLineStyle lineStyle;
   final Line line;
   final TextDirection? textDirection;
   final EmbedBuilder embedBuilder;
@@ -53,6 +67,50 @@ class TextLine extends StatefulWidget {
 
   @override
   State<TextLine> createState() => _TextLineState();
+
+  static TextLineStyle calculateStyle(Line line, [Widget? leading]) {
+    if (leading != null) {
+      return TextLineStyle.indent;
+    }
+    final typeCounts = <Type, int>{};
+    final scannedTypes = <TextLineStyle>{};
+
+    final typeCount = (Type type) {
+      return typeCounts[type] ?? 0;
+    };
+
+    final typeCountLength =
+        () => typeCounts.entries.where((element) => element.value > 0).length;
+
+    for (final child in line.children) {
+      final count = typeCounts.putIfAbsent(child.runtimeType, () => 0);
+      typeCounts[child.runtimeType] = count + 1;
+    }
+    var style = TextLineStyle.wrapping;
+    if (scannedTypes.contains(TextLineStyle.indent)) {
+      style = TextLineStyle.indent;
+    } else if (typeCountLength() == 1 && typeCount(Embed) > 0) {
+      style = TextLineStyle.float;
+    } else if (line.length == 2 &&
+        typeCount(Embed) == 1 &&
+        typeCount(leaf.Text) == 1) {
+      style = TextLineStyle.mixedFloat;
+    } else if (typeCountLength() > 1) {
+      style = TextLineStyle.mixed;
+    } else {
+      style = TextLineStyle.wrapping;
+    }
+    return style;
+  }
+}
+
+enum TextLineStyle { float, indent, wrapping, mixedFloat, mixed }
+
+class TextLineData {
+  TextLineData(this.lineParts, this.style);
+
+  final List<TextLine> lineParts;
+  final TextLineStyle style;
 }
 
 class _TextLineState extends State<TextLine> {
@@ -136,11 +194,18 @@ class _TextLineState extends State<TextLine> {
       return EmbedProxy(widget.embedBuilder(
           context, widget.controller, embed, widget.readOnly));
     }
-    final textSpan = _getTextSpanForWholeLine(context);
-    final strutStyle = StrutStyle.fromTextStyle(textSpan.style!);
+    final result = _getTextSpanForWholeLine(context);
+    if (result.item1 == null && result.item2.length == 1) {
+      return result.item2.first;
+    }
+
+    final textSpan = result.item1 ?? const TextSpan(text: '');
+    final floats = result.item2;
+    final strutStyle =
+        StrutStyle.fromTextStyle(textSpan.style ?? const TextStyle());
     final textAlign = _getTextAlign();
-    final child = RichText(
-      key: _richTextKey,
+
+    final child = WrappableText(
       text: textSpan,
       textAlign: textAlign,
       textDirection: widget.textDirection,
@@ -148,35 +213,46 @@ class _TextLineState extends State<TextLine> {
       textScaleFactor: MediaQuery.textScaleFactorOf(context),
     );
     return RichTextProxy(
-        textStyle: textSpan.style!,
+        floats: floats,
+        richText: child,
+        textStyle: textSpan.style ?? const TextStyle(),
         textAlign: textAlign,
         textDirection: widget.textDirection!,
         strutStyle: strutStyle,
-        locale: Localizations.localeOf(context),
-        child: child);
+        locale: Localizations.localeOf(context));
   }
 
-  InlineSpan _getTextSpanForWholeLine(BuildContext context) {
+  Tuple2<TextSpan?, List<Widget>> _getTextSpanForWholeLine(
+      BuildContext context) {
+    final result = <Widget>[];
     final lineStyle = _getLineStyle(widget.styles);
     if (!widget.line.hasEmbed) {
-      return _buildTextSpan(widget.styles, widget.line.children, lineStyle);
+      return Tuple2(
+          _buildTextSpan(widget.styles, widget.line.children, lineStyle)
+              .singleOrNull,
+          []);
     }
 
     // The line could contain more than one Embed & more than one Text
     final textSpanChildren = <InlineSpan>[];
     var textNodes = LinkedList<Node>();
+    var i = -1;
     for (final child in widget.line.children) {
+      i++;
       if (child is Embed) {
         if (textNodes.isNotEmpty) {
           textSpanChildren
-              .add(_buildTextSpan(widget.styles, textNodes, lineStyle));
+              .addAll(_buildTextSpan(widget.styles, textNodes, lineStyle));
           textNodes = LinkedList<Node>();
         }
-        // Here it should be image
-        final embed = WidgetSpan(
-            child: EmbedProxy(widget.embedBuilder(
-                context, widget.controller, child, widget.readOnly)));
-        textSpanChildren.add(embed);
+
+        final embedWidget = buildEmbedWidget(child, i);
+        if (embedWidget is MetaData) {
+          result.add(embedWidget);
+        } else {
+          textSpanChildren.add(WidgetSpan(child: EmbedProxy(embedWidget)));
+        }
+
         continue;
       }
 
@@ -185,10 +261,30 @@ class _TextLineState extends State<TextLine> {
     }
 
     if (textNodes.isNotEmpty) {
-      textSpanChildren.add(_buildTextSpan(widget.styles, textNodes, lineStyle));
+      textSpanChildren
+          .addAll(_buildTextSpan(widget.styles, textNodes, lineStyle));
     }
 
-    return TextSpan(style: lineStyle, children: textSpanChildren);
+    final finalText = textSpanChildren.isEmpty
+        ? null
+        : TextSpan(style: lineStyle, children: textSpanChildren);
+    return Tuple2(finalText, result);
+  }
+
+  Widget buildEmbedWidget(Embed embed, int index) {
+    final attr = embed.style.attributes;
+    final float = floatOf(attr[Attribute.float.key]?.value?.toString());
+
+    final widget2 =
+        widget.embedBuilder(context, widget.controller, embed, widget.readOnly);
+    if (float != null && float != FCFloat.none) {
+      return MetaData(
+        metaData: FloatData(float: float, placeholderIndex: index),
+        child: widget2,
+      );
+    } else {
+      return widget2;
+    }
   }
 
   TextAlign _getTextAlign() {
@@ -205,14 +301,17 @@ class _TextLineState extends State<TextLine> {
     return TextAlign.start;
   }
 
-  TextSpan _buildTextSpan(DefaultStyles defaultStyles, LinkedList<Node> nodes,
-      TextStyle lineStyle) {
+  Iterable<TextSpan> _buildTextSpan(DefaultStyles defaultStyles,
+      LinkedList<Node> nodes, TextStyle lineStyle) {
     final children = nodes
         .map((node) =>
             _getTextSpanFromNode(defaultStyles, node, widget.line.style))
-        .toList(growable: false);
+        .whereType<InlineSpan>()
+        .toList();
 
-    return TextSpan(children: children, style: lineStyle);
+    return children.isEmpty
+        ? []
+        : [TextSpan(children: children, style: lineStyle)];
   }
 
   TextStyle _getLineStyle(DefaultStyles defaultStyles) {
@@ -270,20 +369,24 @@ class _TextLineState extends State<TextLine> {
     return textStyle;
   }
 
-  TextSpan _getTextSpanFromNode(
+  TextSpan? _getTextSpanFromNode(
       DefaultStyles defaultStyles, Node node, Style lineStyle) {
     final textNode = node as leaf.Text;
     final nodeStyle = textNode.style;
     final isLink = nodeStyle.containsKey(Attribute.link.key) &&
         nodeStyle.attributes[Attribute.link.key]!.value != null;
-
-    return TextSpan(
-      text: textNode.value,
-      style: _getInlineTextStyle(
-          textNode, defaultStyles, nodeStyle, lineStyle, isLink),
-      recognizer: isLink && canLaunchLinks ? _getRecognizer(node) : null,
-      mouseCursor: isLink && canLaunchLinks ? SystemMouseCursors.click : null,
-    );
+    final trimmedValue = textNode.value.trim();
+    if (trimmedValue.isEmpty) {
+      return null;
+    } else {
+      return TextSpan(
+        text: textNode.value,
+        style: _getInlineTextStyle(
+            textNode, defaultStyles, nodeStyle, lineStyle, isLink),
+        recognizer: isLink && canLaunchLinks ? _getRecognizer(node) : null,
+        mouseCursor: isLink && canLaunchLinks ? SystemMouseCursors.click : null,
+      );
+    }
   }
 
   TextStyle _getInlineTextStyle(leaf.Text textNode, DefaultStyles defaultStyles,
@@ -453,6 +556,7 @@ class _TextLineState extends State<TextLine> {
 class EditableTextLine extends RenderObjectWidget {
   const EditableTextLine(
     this.line,
+    this.lineStyle,
     this.leading,
     this.body,
     this.indentWidth,
@@ -467,6 +571,7 @@ class EditableTextLine extends RenderObjectWidget {
   );
 
   final Line line;
+  final TextLineStyle lineStyle;
   final Widget? leading;
   final Widget body;
   final double indentWidth;
@@ -489,6 +594,7 @@ class EditableTextLine extends RenderObjectWidget {
     final defaultStyles = DefaultStyles.getInstance(context);
     return RenderEditableTextLine(
         line,
+        lineStyle,
         textDirection,
         textSelection,
         enableInteractiveSelection,
@@ -505,6 +611,7 @@ class EditableTextLine extends RenderObjectWidget {
       BuildContext context, covariant RenderEditableTextLine renderObject) {
     final defaultStyles = DefaultStyles.getInstance(context);
     renderObject
+      .._lineStyle = lineStyle
       ..setLine(line)
       ..setPadding(_getPadding())
       ..setTextDirection(textDirection)
@@ -531,6 +638,7 @@ class RenderEditableTextLine extends RenderEditableBox {
   /// Creates new editable paragraph render box.
   RenderEditableTextLine(
       this.line,
+      this._lineStyle,
       this.textDirection,
       this.textSelection,
       this.enableInteractiveSelection,
@@ -541,8 +649,17 @@ class RenderEditableTextLine extends RenderEditableBox {
       this.cursorCont,
       this.inlineCodeStyle);
 
+  @override
+  EdgeInsets get resolvedPadding {
+    if (_resolvedPadding == null) {
+      _resolvePadding();
+    }
+    return _resolvedPadding!;
+  }
+
   RenderBox? _leading;
   RenderContentProxyBox? _body;
+  TextLineStyle _lineStyle;
   Line line;
   TextDirection textDirection;
   TextSelection textSelection;
@@ -764,8 +881,9 @@ class RenderEditableTextLine extends RenderEditableBox {
   }
 
   @override
-  Offset getOffsetForCaret(TextPosition position) {
-    return _body!.getOffsetForCaret(position, _caretPrototype) +
+  Offset getOffsetForCaret(TextPosition position, {bool includeFloats = true}) {
+    return _body!.getOffsetForCaret(position, _caretPrototype,
+            includeFloats: includeFloats) +
         (_body!.parentData as BoxParentData).offset;
   }
 
@@ -972,46 +1090,68 @@ class RenderEditableTextLine extends RenderEditableBox {
   }
 
   @override
+  void setupParentData(RenderObject child) {
+    if (child.parentData is! EditableContainerParentData) {
+      child.parentData = EditableContainerParentData();
+    }
+  }
+
+  @override
   void performLayout() {
     final constraints = this.constraints;
     _selectedRects = null;
+    var floats = quillParent.startingFloats;
 
     _resolvePadding();
     assert(_resolvedPadding != null);
 
     if (_body == null && _leading == null) {
+      final height = _resolvedPadding!.top + _resolvedPadding!.bottom;
       size = constraints.constrain(Size(
         _resolvedPadding!.left + _resolvedPadding!.right,
-        _resolvedPadding!.top + _resolvedPadding!.bottom,
+        height,
       ));
-      return;
+      quillParent.endingFloats = floats.build(height: height);
+    } else {
+      if (_lineStyle == TextLineStyle.mixed) {
+        // final pr = (_body as RenderParagraphProxy);
+        // final p = pr.child as R enderParagraph;
+
+      }
+      final innerConstraints = constraints.deflate(_resolvedPadding!);
+
+      final indentWidth = textDirection == TextDirection.ltr
+          ? _resolvedPadding!.left
+          : _resolvedPadding!.right;
+      final _bodyParentData = _body!.quillParent
+        ..startingFloats = floats.cleared(false);
+      _body!.layout(innerConstraints, parentUsesSize: true);
+      assert(_bodyParentData.endingFloats != null,
+          'Body shoudl have consumed floats');
+      _bodyParentData.offset = _bodyParentData.endingFloats!.offset +
+          Offset(_resolvedPadding!.left, _resolvedPadding!.top);
+
+      var _bodyFloat =
+          _bodyParentData.endingFloats!.withPadding(_resolvedPadding);
+
+      var bodySize = Size(
+          _body!.size.width + _resolvedPadding!.horizontal, _bodyFloat.height);
+
+      if (_leading != null) {
+        final leadingConstraints = innerConstraints.copyWith(
+            minWidth: indentWidth,
+            maxWidth: indentWidth,
+            maxHeight: bodySize.height - _bodyFloat.yPosStart);
+        _leading!.layout(leadingConstraints, parentUsesSize: true);
+        (_leading!.parentData as BoxParentData).offset = Offset(
+            floats.xPosStart, _resolvedPadding!.top + _bodyFloat.yPosStart);
+      }
+
+      size = constraints.constrain(bodySize);
+      quillParent.endingFloats = _bodyFloat;
+
+      _computeCaretPrototype();
     }
-    final innerConstraints = constraints.deflate(_resolvedPadding!);
-
-    final indentWidth = textDirection == TextDirection.ltr
-        ? _resolvedPadding!.left
-        : _resolvedPadding!.right;
-
-    _body!.layout(innerConstraints, parentUsesSize: true);
-    (_body!.parentData as BoxParentData).offset =
-        Offset(_resolvedPadding!.left, _resolvedPadding!.top);
-
-    if (_leading != null) {
-      final leadingConstraints = innerConstraints.copyWith(
-          minWidth: indentWidth,
-          maxWidth: indentWidth,
-          maxHeight: _body!.size.height);
-      _leading!.layout(leadingConstraints, parentUsesSize: true);
-      (_leading!.parentData as BoxParentData).offset =
-          Offset(0, _resolvedPadding!.top);
-    }
-
-    size = constraints.constrain(Size(
-      _resolvedPadding!.left + _body!.size.width + _resolvedPadding!.right,
-      _resolvedPadding!.top + _body!.size.height + _resolvedPadding!.bottom,
-    ));
-
-    _computeCaretPrototype();
   }
 
   CursorPainter get _cursorPainter => CursorPainter(
@@ -1262,6 +1402,16 @@ class _TextLineElement extends RenderObjectElement {
     }
     if (newChild != null) {
       _slotToChildren[slot] = newChild;
+    }
+  }
+}
+
+extension IterableT<T> on Iterable<T> {
+  T? get singleOrNull {
+    if (isEmpty) {
+      return null;
+    } else {
+      return single;
     }
   }
 }

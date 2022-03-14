@@ -9,6 +9,8 @@ import '../utils/delta.dart';
 import 'box.dart';
 import 'cursor.dart';
 import 'delegate.dart';
+import 'float/float_data.dart';
+import 'float/shared.dart';
 import 'link.dart';
 import 'text_line.dart';
 import 'text_selection.dart';
@@ -124,9 +126,13 @@ class EditableTextBlock extends StatelessWidget {
     var index = 0;
     for (final line in Iterable.castFrom<dynamic, Line>(block.children)) {
       index++;
+      final leading =
+          _buildLeading(context, line, index, indentLevelCounts, count);
+      final lineStyle = TextLine.calculateStyle(line, leading);
       final editableTextLine = EditableTextLine(
           line,
-          _buildLeading(context, line, index, indentLevelCounts, count),
+          lineStyle,
+          leading,
           TextLine(
             line: line,
             textDirection: textDirection,
@@ -137,6 +143,7 @@ class EditableTextBlock extends StatelessWidget {
             controller: controller,
             linkActionPicker: linkActionPicker,
             onLaunchUrl: onLaunchUrl,
+            lineStyle: lineStyle,
           ),
           _getIndentWidth(),
           _getSpacingForLine(line, index, count, defaultStyles),
@@ -362,12 +369,14 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   }
 
   @override
-  Offset getOffsetForCaret(TextPosition position) {
+  Offset getOffsetForCaret(TextPosition position, {bool includeFloats = true}) {
     final child = childAtPosition(position);
-    return child.getOffsetForCaret(TextPosition(
-          offset: position.offset - child.container.offset,
-          affinity: position.affinity,
-        )) +
+    return child.getOffsetForCaret(
+            TextPosition(
+              offset: position.offset - child.container.offset,
+              affinity: position.affinity,
+            ),
+            includeFloats: includeFloats) +
         (child.parentData as BoxParentData).offset;
   }
 
@@ -523,7 +532,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   void _paintDecoration(PaintingContext context, Offset offset) {
     _painter ??= _decoration.createBoxPainter(markNeedsPaint);
 
-    final decorationPadding = resolvedPadding! - _contentPadding;
+    final decorationPadding = resolvedPadding - _contentPadding;
 
     final filledConfiguration =
         configuration.copyWith(size: decorationPadding.deflateSize(size));

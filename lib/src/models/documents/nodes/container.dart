@@ -1,5 +1,7 @@
 import 'dart:collection';
 
+import '../../../widgets/float/shared.dart';
+import '../attribute.dart';
 import '../style.dart';
 import 'leaf.dart';
 import 'line.dart';
@@ -87,17 +89,19 @@ abstract class Container<T extends Node?> extends Node {
   /// [ChildQuery.offset] is set to relative offset within returned child node
   /// which points at the same character position in the document as the
   /// original [offset].
-  ChildQuery queryChild(int offset, bool inclusive) {
+  ChildQuery queryChild(int offset, bool inclusive, {bool withFloats = true}) {
     if (offset < 0 || offset > length) {
       return ChildQuery(null, 0);
     }
 
     for (final node in children) {
-      final len = node.length;
-      if (offset < len || (inclusive && offset == len && node.isLast)) {
-        return ChildQuery(node, offset);
+      if (!node.isFloat || withFloats) {
+        final len = node.length;
+        if (offset < len || (inclusive && offset == len && node.isLast)) {
+          return ChildQuery(node, offset);
+        }
+        offset -= len;
       }
-      offset -= len;
     }
     return ChildQuery(null, 0);
   }
@@ -116,7 +120,7 @@ abstract class Container<T extends Node?> extends Node {
     assert(index == 0 || (index > 0 && index < length));
 
     if (isNotEmpty) {
-      final child = queryChild(index, false);
+      final child = queryChild(index, false, withFloats: false);
       child.node!.insert(child.offset, data, style);
       return;
     }
@@ -163,4 +167,24 @@ class ChildQuery {
 
   /// Returns `true` [node] is not `null`.
   bool get isNotEmpty => node != null;
+}
+
+extension on Node {
+  bool get isFloat {
+    return float != FCFloat.none;
+  }
+
+  bool get isNotFloat {
+    return float == FCFloat.none;
+  }
+
+  FCFloat get float {
+    final self = this;
+    if (self is Embed) {
+      final floatValue = self.style.attributes[Attribute.float.key]?.value;
+      return floatOf(floatValue);
+    } else {
+      return FCFloat.none;
+    }
+  }
 }

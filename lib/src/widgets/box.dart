@@ -1,6 +1,11 @@
 import 'package:flutter/rendering.dart';
+import 'package:flutter_quill/src/widgets/proxy.dart';
 
 import '../models/documents/nodes/container.dart';
+import '../models/documents/nodes/line.dart';
+import 'float/float_data.dart';
+
+// abstract class RenderContentProxyContainer implements RenderContentProxy, RenderBox {}
 
 /// A common interface to render boxes which represent a piece of rich text
 /// content.
@@ -13,7 +18,8 @@ import '../models/documents/nodes/container.dart';
 abstract class RenderContentProxyBox implements RenderBox {
   double get preferredLineHeight;
 
-  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype);
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype,
+      {bool includeFloats = true});
 
   TextPosition getPositionForOffset(Offset offset);
 
@@ -37,6 +43,8 @@ abstract class RenderContentProxyBox implements RenderBox {
 /// regular (non-editable) render boxes which implement
 /// [RenderContentProxyBox].
 abstract class RenderEditableBox extends RenderBox {
+  EdgeInsets get resolvedPadding;
+
   /// The document node represented by this render box.
   Container get container;
 
@@ -50,7 +58,7 @@ abstract class RenderEditableBox extends RenderBox {
   /// The `position` parameter must be relative to the [node]'s content.
   ///
   /// Valid only after [layout].
-  Offset getOffsetForCaret(TextPosition position);
+  Offset getOffsetForCaret(TextPosition position, {bool includeFloats = true});
 
   /// Returns the position within the text for the given pixel offset.
   ///
@@ -138,4 +146,22 @@ abstract class RenderEditableBox extends RenderBox {
   /// Returns the [Rect] of the caret prototype at the given text
   /// position. [Rect] starts at origin.
   Rect getCaretPrototype(TextPosition position);
+}
+
+extension RenderContentProxyExt on RenderContentProxyBox {
+  bool get isTextItem {
+    return this is RenderParagraphProxy;
+  }
+
+  RenderParagraphProxy get paragraph {
+    return this as RenderParagraphProxy;
+  }
+
+  RenderEmbedProxy get embed {
+    return this as RenderEmbedProxy;
+  }
+
+  bool get isWidgetItem {
+    return this is RenderEmbedProxy;
+  }
 }

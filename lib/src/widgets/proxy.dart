@@ -3,7 +3,11 @@ import 'dart:ui';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../flutter_quill.dart';
 import 'box.dart';
+import 'editor.dart';
+import 'float/render_wrappable_text.dart';
+import 'float/wrappable_text.dart';
 
 class BaselineProxy extends SingleChildRenderObjectWidget {
   const BaselineProxy({Key? key, Widget? child, this.textStyle, this.padding})
@@ -65,6 +69,7 @@ class RenderBaselineProxy extends RenderProxyBox {
   @override
   double computeDistanceToActualBaseline(TextBaseline baseline) =>
       _prototypePainter.computeDistanceToActualBaseline(baseline);
+
   // SEE What happens + _padding?.top;
 
   @override
@@ -75,7 +80,9 @@ class RenderBaselineProxy extends RenderProxyBox {
 }
 
 class EmbedProxy extends SingleChildRenderObjectWidget {
-  const EmbedProxy(Widget child) : super(child: child);
+  const EmbedProxy(
+    Widget child,
+  ) : super(child: child);
 
   @override
   RenderEmbedProxy createRenderObject(BuildContext context) =>
@@ -104,7 +111,8 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
   double getFullHeightForCaret(TextPosition position) => size.height;
 
   @override
-  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) {
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype,
+      {bool includeFloats = true}) {
     assert(
         position.offset == 1 || position.offset == 0 || position.offset == -1);
     return position.offset <= 0
@@ -124,10 +132,11 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
   double get preferredLineHeight => size.height;
 }
 
-class RichTextProxy extends SingleChildRenderObjectWidget {
+class RichTextProxy extends MultiChildRenderObjectWidget {
   /// Child argument should be an instance of RichText widget.
-  const RichTextProxy(
-      {required RichText child,
+  RichTextProxy(
+      {required this.richText,
+      required this.floats,
       required this.textStyle,
       required this.textAlign,
       required this.textDirection,
@@ -137,8 +146,10 @@ class RichTextProxy extends SingleChildRenderObjectWidget {
       this.textWidthBasis = TextWidthBasis.parent,
       this.textHeightBehavior,
       Key? key})
-      : super(key: key, child: child);
+      : super(key: key, children: [...floats]);
 
+  final WrappableText richText;
+  final List<Widget> floats;
   final TextStyle textStyle;
   final TextAlign textAlign;
   final TextDirection textDirection;
@@ -151,151 +162,84 @@ class RichTextProxy extends SingleChildRenderObjectWidget {
   @override
   RenderParagraphProxy createRenderObject(BuildContext context) {
     return RenderParagraphProxy(
-        null,
-        textStyle,
-        textAlign,
-        textDirection,
-        textScaleFactor,
-        strutStyle,
-        locale,
-        textWidthBasis,
-        textHeightBehavior);
+        richText, floats, textScaleFactor, DefaultTextStyle.of(context));
   }
 
   @override
   void updateRenderObject(
       BuildContext context, covariant RenderParagraphProxy renderObject) {
     renderObject
-      ..textStyle = textStyle
-      ..textAlign = textAlign
-      ..textDirection = textDirection
-      ..textScaleFactor = textScaleFactor
-      ..locale = locale
-      ..strutStyle = strutStyle
-      ..textWidthBasis = textWidthBasis
-      ..textHeightBehavior = textHeightBehavior;
+      ..richText = richText
+      ..floats = floats
+      ..defaultTextScaleFactor = textScaleFactor
+      ..defaultTextStyle = DefaultTextStyle.of(context)
+      ..textDirection = textDirection;
   }
 }
 
-class RenderParagraphProxy extends RenderProxyBox
+class RenderParagraphProxy extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, RenderBoxParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, RenderBoxParentData>,
+        FloatLayoutMixin
     implements RenderContentProxyBox {
   RenderParagraphProxy(
-    RenderParagraph? child,
-    TextStyle textStyle,
-    TextAlign textAlign,
-    TextDirection textDirection,
+    this._richText,
+    this.floats,
     double textScaleFactor,
-    StrutStyle strutStyle,
-    Locale locale,
-    TextWidthBasis textWidthBasis,
-    TextHeightBehavior? textHeightBehavior,
-  )   : _prototypePainter = TextPainter(
-            text: TextSpan(text: ' ', style: textStyle),
-            textAlign: textAlign,
-            textDirection: textDirection,
-            textScaleFactor: textScaleFactor,
-            strutStyle: strutStyle,
-            locale: locale,
-            textWidthBasis: textWidthBasis,
-            textHeightBehavior: textHeightBehavior),
-        super(child);
+    DefaultTextStyle defaultTextStyle,
+  ) : super() {
+    this.defaultTextStyle = defaultTextStyle;
+    this.defaultTextScaleFactor = textScaleFactor;
 
-  final TextPainter _prototypePainter;
-
-  set textStyle(TextStyle value) {
-    if (_prototypePainter.text!.style == value) {
-      return;
-    }
-    _prototypePainter.text = TextSpan(text: ' ', style: value);
-    markNeedsLayout();
+    _paragraphRenderer = RenderWrappingText(
+        floats.length, this, richText, textDirection, textScaleFactor);
+    setupParentData(_paragraphRenderer);
+    add(_paragraphRenderer);
   }
 
-  set textAlign(TextAlign value) {
-    if (_prototypePainter.textAlign == value) {
-      return;
+  WrappableText _richText;
+
+  WrappableText get richText => _richText;
+
+  set richText(WrappableText richText) {
+    if (_richText != richText) {
+      _richText = richText;
+
+      _paragraphRenderer.updateWith(_richText, this, floats.length,
+          textDirection, defaultTextStyle, defaultTextScaleFactor);
+      markNeedsLayout();
     }
-    _prototypePainter.textAlign = value;
-    markNeedsLayout();
   }
 
-  set textDirection(TextDirection value) {
-    if (_prototypePainter.textDirection == value) {
-      return;
-    }
-    _prototypePainter.textDirection = value;
-    markNeedsLayout();
-  }
+  List<Widget> floats = [];
 
-  set textScaleFactor(double value) {
-    if (_prototypePainter.textScaleFactor == value) {
-      return;
-    }
-    _prototypePainter.textScaleFactor = value;
-    markNeedsLayout();
-  }
+  late RenderWrappingText _paragraphRenderer;
 
-  set strutStyle(StrutStyle value) {
-    if (_prototypePainter.strutStyle == value) {
-      return;
-    }
-    _prototypePainter.strutStyle = value;
-    markNeedsLayout();
-  }
-
-  set locale(Locale value) {
-    if (_prototypePainter.locale == value) {
-      return;
-    }
-    _prototypePainter.locale = value;
-    markNeedsLayout();
-  }
-
-  set textWidthBasis(TextWidthBasis value) {
-    if (_prototypePainter.textWidthBasis == value) {
-      return;
-    }
-    _prototypePainter.textWidthBasis = value;
-    markNeedsLayout();
-  }
-
-  set textHeightBehavior(TextHeightBehavior? value) {
-    if (_prototypePainter.textHeightBehavior == value) {
-      return;
-    }
-    _prototypePainter.textHeightBehavior = value;
-    markNeedsLayout();
-  }
+  RenderWrappingText? get paragraph => _paragraphRenderer;
 
   @override
-  RenderParagraph? get child => super.child as RenderParagraph?;
+  double get preferredLineHeight => _paragraphRenderer.preferredLineHeight;
 
   @override
-  double get preferredLineHeight => _prototypePainter.preferredLineHeight;
-
-  @override
-  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) =>
-      child!.getOffsetForCaret(position, caretPrototype);
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype,
+          {bool includeFloats = true}) =>
+      paragraph!.getOffsetForCaret(position, caretPrototype,
+          includeFloats: includeFloats);
 
   @override
   TextPosition getPositionForOffset(Offset offset) =>
-      child!.getPositionForOffset(offset);
+      paragraph!.getPositionForOffset(offset);
 
   @override
   double? getFullHeightForCaret(TextPosition position) =>
-      child!.getFullHeightForCaret(position);
+      paragraph!.getFullHeightForCaret(position);
 
   @override
   TextRange getWordBoundary(TextPosition position) =>
-      child!.getWordBoundary(position);
+      paragraph!.getWordBoundary(position);
 
   @override
-  List<TextBox> getBoxesForSelection(TextSelection selection) => child!
-      .getBoxesForSelection(selection, boxHeightStyle: BoxHeightStyle.strut);
-
-  @override
-  void performLayout() {
-    super.performLayout();
-    _prototypePainter.layout(
-        minWidth: constraints.minWidth, maxWidth: constraints.maxWidth);
-  }
+  List<TextBox> getBoxesForSelection(TextSelection selection) =>
+      paragraph!.getBoxesForSelection(selection);
 }

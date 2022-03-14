@@ -8,6 +8,9 @@ import 'package:flutter/scheduler.dart';
 
 import '../models/documents/nodes/node.dart';
 import 'editor.dart';
+import 'dart:math' as math;
+
+import 'float_layouts.dart';
 
 TextSelection localSelection(Node node, TextSelection selection, fromParent) {
   final base = fromParent ? node.offset : node.documentOffset;

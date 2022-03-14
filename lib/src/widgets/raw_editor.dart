@@ -28,12 +28,15 @@ import 'delegate.dart';
 import 'editor.dart';
 import 'embeds/default_embed_builder.dart';
 import 'embeds/image.dart';
+import 'float/float_data.dart';
+import 'float/shared.dart';
 import 'keyboard_listener.dart';
 import 'link.dart';
 import 'proxy.dart';
 import 'quill_single_child_scroll_view.dart';
 import 'raw_editor/raw_editor_state_selection_delegate_mixin.dart';
 import 'raw_editor/raw_editor_state_text_input_client_mixin.dart';
+import 'float_layouts.dart';
 import 'text_block.dart';
 import 'text_line.dart';
 import 'text_selection.dart';
@@ -433,10 +436,13 @@ class RawEditorState extends EditorState
 
   List<Widget> _buildChildren(Document doc, BuildContext context) {
     final result = <Widget>[];
+    var i = 0;
     final indentLevelCounts = <int, int>{};
     for (final node in doc.root.children) {
       if (node is Line) {
-        final editableTextLine = _getEditableTextLineFromNode(node, context);
+        final editableTextLine = _getEditableTextLineFromNode(node, i, context);
+
+        i++;
         result.add(Directionality(
             textDirection: getDirectionOfNode(node), child: editableTextLine));
       } else if (node is Block) {
@@ -473,9 +479,11 @@ class RawEditorState extends EditorState
   }
 
   EditableTextLine _getEditableTextLineFromNode(
-      Line node, BuildContext context) {
+      Line line, int index, BuildContext context) {
+    final lineStyle = TextLine.calculateStyle(line);
     final textLine = TextLine(
-      line: node,
+      lineStyle: lineStyle,
+      line: line,
       textDirection: _textDirection,
       embedBuilder: widget.embedBuilder,
       customStyleBuilder: widget.customStyleBuilder,
@@ -486,11 +494,12 @@ class RawEditorState extends EditorState
       onLaunchUrl: widget.onLaunchUrl,
     );
     final editableTextLine = EditableTextLine(
-        node,
+        line,
+        lineStyle,
         null,
         textLine,
         0,
-        _getVerticalSpacingForLine(node, _styles),
+        _getVerticalSpacingForLine(line, _styles),
         _textDirection,
         widget.controller.selection,
         widget.selectionColor,

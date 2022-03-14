@@ -25,6 +25,7 @@ class Attribute<T> {
     Attribute.strikeThrough.key: Attribute.strikeThrough,
     Attribute.inlineCode.key: Attribute.inlineCode,
     Attribute.font.key: Attribute.font,
+    Attribute.float.key: Attribute.float,
     Attribute.size.key: Attribute.size,
     Attribute.link.key: Attribute.link,
     Attribute.color.key: Attribute.color,
@@ -38,6 +39,7 @@ class Attribute<T> {
     Attribute.blockQuote.key: Attribute.blockQuote,
     Attribute.indent.key: Attribute.indent,
     Attribute.width.key: Attribute.width,
+    Attribute.float.key: Attribute.float,
     Attribute.height.key: Attribute.height,
     Attribute.style.key: Attribute.style,
     Attribute.token.key: Attribute.token,
@@ -84,6 +86,8 @@ class Attribute<T> {
 
   static final WidthAttribute width = WidthAttribute(null);
 
+  static final FloatAttribute float = FloatAttribute(null);
+
   static final HeightAttribute height = HeightAttribute(null);
 
   static final StyleAttribute style = StyleAttribute(null);
@@ -102,6 +106,7 @@ class Attribute<T> {
 
   static final Set<String> inlineKeys = {
     Attribute.bold.key,
+    Attribute.float.key,
     Attribute.italic.key,
     Attribute.small.key,
     Attribute.underline.key,
@@ -115,6 +120,7 @@ class Attribute<T> {
   static final Set<String> blockKeys = LinkedHashSet.of({
     Attribute.header.key,
     Attribute.align.key,
+    Attribute.float.key,
     Attribute.list.key,
     Attribute.codeBlock.key,
     Attribute.blockQuote.key,
@@ -126,6 +132,7 @@ class Attribute<T> {
     Attribute.list.key,
     Attribute.align.key,
     Attribute.codeBlock.key,
+    Attribute.float.key,
     Attribute.blockQuote.key,
     Attribute.indent.key,
     Attribute.direction.key,
@@ -134,6 +141,7 @@ class Attribute<T> {
   static final Set<String> exclusiveBlockKeys = LinkedHashSet.of({
     Attribute.header.key,
     Attribute.list.key,
+    Attribute.float.key,
     Attribute.codeBlock.key,
     Attribute.blockQuote.key,
   });
@@ -324,6 +332,10 @@ class DirectionAttribute extends Attribute<String?> {
 
 class WidthAttribute extends Attribute<String?> {
   WidthAttribute(String? val) : super('width', AttributeScope.IGNORE, val);
+}
+
+class FloatAttribute extends Attribute<String?> {
+  FloatAttribute(String? val) : super('float', AttributeScope.IGNORE, val);
 }
 
 class HeightAttribute extends Attribute<String?> {
