@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -703,6 +702,8 @@ class RawEditorState extends EditorState
         });
       }
     }
+
+    _adjacentLineAction.stopCurrentVerticalRunIfSelectionChanges();
   }
 
   void _onChangeTextEditingValue([bool ignoreCaret = false]) {
@@ -913,19 +914,20 @@ class RawEditorState extends EditorState
 
     if (cause == SelectionChangedCause.toolbar) {
       bringIntoView(textEditingValue.selection.extent);
+      // on iOS, Safari does not hide the selection after copy
+      // however, most other iOS apps do as well as other platforms
+      // so we'll hide toolbar & selection after copy
       hideToolbar(false);
 
-      if (!Platform.isIOS) {
-        // Collapse the selection and hide the toolbar and handles.
-        userUpdateTextEditingValue(
-          TextEditingValue(
-            text: textEditingValue.text,
-            selection:
-                TextSelection.collapsed(offset: textEditingValue.selection.end),
-          ),
-          SelectionChangedCause.toolbar,
-        );
-      }
+      // Collapse the selection and hide the toolbar and handles.
+      userUpdateTextEditingValue(
+        TextEditingValue(
+          text: textEditingValue.text,
+          selection:
+              TextSelection.collapsed(offset: textEditingValue.selection.end),
+        ),
+        SelectionChangedCause.toolbar,
+      );
     }
   }
 
@@ -992,7 +994,10 @@ class RawEditorState extends EditorState
         ReplaceTextIntent(textEditingValue, data.text!, selection, cause));
 
     if (cause == SelectionChangedCause.toolbar) {
-      bringIntoView(textEditingValue.selection.extent);
+      try {
+        // ignore exception when paste window is at end of document
+        bringIntoView(textEditingValue.selection.extent);
+      } catch (_) {}
       hideToolbar();
     }
   }
