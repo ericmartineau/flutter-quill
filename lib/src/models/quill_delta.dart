@@ -7,6 +7,7 @@ import 'package:quiver/core.dart';
 
 const _attributeEquality = DeepCollectionEquality();
 const _valueEquality = DeepCollectionEquality();
+const _listEquality = ListEquality<Operation>(DefaultEquality<Operation>());
 
 /// Decoder function to convert raw `data` object into a user-defined data type.
 ///
@@ -296,6 +297,8 @@ class Delta {
   /// Returns number of operations in this delta.
   int get length => _operations.length;
 
+  List<Operation> get operations => [..._operations];
+
   /// Returns [Operation] at specified [index] in this delta.
   Operation operator [](int index) => _operations[index];
 
@@ -313,8 +316,7 @@ class Delta {
     if (identical(this, other)) return true;
     if (other is! Delta) return false;
     final typedOther = other;
-    const comparator = ListEquality<Operation>(DefaultEquality<Operation>());
-    return comparator.equals(_operations, typedOther._operations);
+    return _listEquality.equals(_operations, typedOther._operations);
   }
 
   @override

@@ -1744,6 +1744,8 @@ class _UpdateTextSelectionToAdjacentLineAction<
     }
   }
 
+  final _intentReporter =
+      Reporter("userIntent:", labels: ["intent", "verticalRun"]);
   @override
   void invoke(T intent, [BuildContext? context]) {
     assert(state.textEditingValue.selection.isValid);
@@ -1755,6 +1757,7 @@ class _UpdateTextSelectionToAdjacentLineAction<
       return;
     }
 
+    _intentReporter.sync([intent, _verticalMovementRun == null]);
     final currentRun = _verticalMovementRun ??
         state.renderEditor
             .startVerticalCaretMovement(state.renderEditor.selection.extent);

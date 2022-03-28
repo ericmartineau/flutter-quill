@@ -18,10 +18,13 @@ import 'float/float_data.dart';
 abstract class RenderContentProxyBox implements RenderBox {
   double get preferredLineHeight;
 
+  // Relative to this content
   Offset getOffsetForCaret(TextPosition position, Rect caretPrototype,
       {bool includeFloats = true});
 
-  TextPosition getPositionForOffset(Offset offset);
+  /// Given a relative offset, this calculates a relative TextPosition
+  TextPosition getPositionForOffset(Offset offset,
+      {required bool includeFloats});
 
   double? getFullHeightForCaret(TextPosition position);
 
@@ -35,6 +38,11 @@ abstract class RenderContentProxyBox implements RenderBox {
   ///
   /// Valid only after [layout]
   List<TextBox> getBoxesForSelection(TextSelection textSelection);
+
+  bool contains(Offset offset);
+
+  TextPosition? getPositionBelow(TextPosition from);
+  TextPosition? getPositionAbove(TextPosition from);
 }
 
 /// Base class for render boxes of editable content.
@@ -65,7 +73,8 @@ abstract class RenderEditableBox extends RenderBox {
   /// The `offset` parameter must be local to this box coordinate system.
   ///
   /// Valid only after [layout].
-  TextPosition getPositionForOffset(Offset offset);
+  TextPosition? getPositionForOffset(Offset offset,
+      {required bool includeFloats});
 
   /// Returns the position relative to the [node] content
   ///
@@ -146,6 +155,8 @@ abstract class RenderEditableBox extends RenderBox {
   /// Returns the [Rect] of the caret prototype at the given text
   /// position. [Rect] starts at origin.
   Rect getCaretPrototype(TextPosition position);
+
+  bool contains(Offset translate);
 }
 
 extension RenderContentProxyExt on RenderContentProxyBox {

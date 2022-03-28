@@ -28,8 +28,17 @@
     }
   },
   {
+    "insert": {
+      "image": "https://user-images.githubusercontent.com/122956/72955931-ccc07900-3d52-11ea-89b1-d468a6e2aa2b.png?foo=bar"
+    },
+    "attributes": {
+      "float": "right",
+      "width": "250",
+      "style": "display: block; margin: auto;"
+    }
+  },
+  {
     "insert": "I wonder if they had issues, and then looked at the URL you were using in the demo?  I think it was app eh823 - I can see that they answered the first 3 questions under eh823, but then after that, the questions went into buildaplay."
-
   },
 
   {
@@ -44,16 +53,7 @@
   {
     "insert": "Quill component for Flutter. Quill component for Flutter. Quill component for Flutter Quill component for Flutter Quill component for Flutter. "
   },
-  {
-    "insert": {
-      "image": "https://user-images.githubusercontent.com/122956/72955931-ccc07900-3d52-11ea-89b1-d468a6e2aa2b.png?foo=bar"
-    },
-    "attributes": {
-      "float": "right",
-      "width": "250",
-      "style": "display: block; margin: auto;"
-    }
-  },
+
   {
     "insert": "I added 2 more dynos each to keap-copy-generator and keap-ai-copy (both are at 3 2x dynos now). Can you watch them during the call and adjust if necessary?"
   },

@@ -1,11 +1,13 @@
 import 'dart:collection';
 
 import '../../../widgets/float/shared.dart';
+import '../../../widgets/render_editable_ext.dart';
 import '../attribute.dart';
 import '../style.dart';
 import 'leaf.dart';
 import 'line.dart';
 import 'node.dart';
+import 'leaf.dart';
 
 /// Container can accommodate other nodes.
 ///
@@ -89,21 +91,25 @@ abstract class Container<T extends Node?> extends Node {
   /// [ChildQuery.offset] is set to relative offset within returned child node
   /// which points at the same character position in the document as the
   /// original [offset].
-  ChildQuery queryChild(int offset, bool inclusive, {bool withFloats = true}) {
+  ChildQuery queryChild(int offset, bool inclusive,
+      {bool includeFloats = true}) {
     if (offset < 0 || offset > length) {
       return ChildQuery(null, 0);
     }
-
+    var skippedNodes = 0;
     for (final node in children) {
-      if (!node.isFloat || withFloats) {
+      if (node.isFloat) {
+        skippedNodes++;
+      }
+      if (!node.isFloat || includeFloats) {
         final len = node.length;
         if (offset < len || (inclusive && offset == len && node.isLast)) {
-          return ChildQuery(node, offset);
+          return ChildQuery(node, offset, skippedNodes: skippedNodes);
         }
         offset -= len;
       }
     }
-    return ChildQuery(null, 0);
+    return ChildQuery(null, 0, skippedNodes: skippedNodes);
   }
 
   @override
@@ -120,7 +126,7 @@ abstract class Container<T extends Node?> extends Node {
     assert(index == 0 || (index > 0 && index < length));
 
     if (isNotEmpty) {
-      final child = queryChild(index, false, withFloats: false);
+      final child = queryChild(index, false, includeFloats: false);
       child.node!.insert(child.offset, data, style);
       return;
     }
@@ -152,10 +158,12 @@ abstract class Container<T extends Node?> extends Node {
 
 /// Result of a child query in a [Container].
 class ChildQuery {
-  ChildQuery(this.node, this.offset);
+  ChildQuery(this.node, this.offset, {this.skippedNodes = 0});
 
   /// The child node if found, otherwise `null`.
   final Node? node;
+
+  final int skippedNodes;
 
   /// Starting offset within the child [node] which points at the same
   /// character in the document as the original offset passed to
@@ -167,24 +175,4 @@ class ChildQuery {
 
   /// Returns `true` [node] is not `null`.
   bool get isNotEmpty => node != null;
-}
-
-extension on Node {
-  bool get isFloat {
-    return float != FCFloat.none;
-  }
-
-  bool get isNotFloat {
-    return float == FCFloat.none;
-  }
-
-  FCFloat get float {
-    final self = this;
-    if (self is Embed) {
-      final floatValue = self.style.attributes[Attribute.float.key]?.value;
-      return floatOf(floatValue);
-    } else {
-      return FCFloat.none;
-    }
-  }
 }

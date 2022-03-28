@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import '../../utils/core_ext.dart';
+import '../render_editable_ext.dart';
 import 'float_data.dart';
 import 'inline_span_ext.dart';
 import 'render_object_ext.dart';
@@ -23,26 +25,36 @@ import 'wrappable_text.dart';
 ///
 class RenderWrappingText extends RenderBox {
   RenderWrappingText(
-    this.floatCount,
+    /// The number of floats contained in this text element
+    this.floatIndexes,
+    // The amount this text is offset within it's immediate parent, which
+    // should include the number of floats rendered
+    this.paragraphOffset,
+
+    /// The parent
     this.parent,
     this.wrappingText,
     TextDirection defaultTextDirection,
     double defaultTextScaleFactor,
   ) : renderer = TextRenderer(
-            parent,
-            TextPainter(
-                text: wrappingText.text,
-                textAlign: wrappingText.textAlign ?? TextAlign.start,
-                textDirection:
-                    wrappingText.textDirection ?? defaultTextDirection,
-                textScaleFactor:
-                    wrappingText.textScaleFactor ?? defaultTextScaleFactor,
-                locale: wrappingText.locale,
-                strutStyle: wrappingText.strutStyle,
-                textHeightBehavior: wrappingText.textHeightBehavior),
-            0);
+          parent,
+          TextPainter(
+              text: wrappingText.text,
+              textAlign: wrappingText.textAlign ?? TextAlign.start,
+              textDirection: wrappingText.textDirection ?? defaultTextDirection,
+              textScaleFactor:
+                  wrappingText.textScaleFactor ?? defaultTextScaleFactor,
+              locale: wrappingText.locale,
+              strutStyle: wrappingText.strutStyle,
+              textHeightBehavior: wrappingText.textHeightBehavior),
+          0,
+          textOffset:
+              0, // This isn't relative to the document, but to this paragraph
+          // floatIndexes: floatIndexes
+        );
 
-  int floatCount;
+  int paragraphOffset;
+  List<int> floatIndexes;
   late Size calculatedSize;
   final TextRenderer renderer;
   final WrappableText wrappingText;
@@ -98,18 +110,18 @@ class RenderWrappingText extends RenderBox {
   RenderComparison updateWith(
     WrappableText wrapText,
     RenderBox parent,
-    int floatCount,
+    List<int> floatIndexes,
     TextDirection defaultTextDirection,
     DefaultTextStyle defaultTextStyle,
     double defaultTextScaleFactor,
   ) {
     var needsPaint = false;
     var needsLayout = false;
-    this.floatCount = floatCount;
-    final mergedStyle = (wrapText.text.style ?? const TextStyle())
-        .merge(defaultTextStyle.style);
+    this.floatIndexes = floatIndexes;
+    // renderer.floatIndexes = floatIndexes;
 
-    final textSpan = wrapText.text.copyWith(style: mergedStyle);
+    final textSpan =
+        TextSpan(style: defaultTextStyle.style, children: [wrapText.text]);
     final comparison = renderer._painter.text!.compareTo(textSpan);
     switch (comparison) {
       case RenderComparison.identical:
@@ -123,6 +135,8 @@ class RenderWrappingText extends RenderBox {
         needsPaint = true;
         break;
       case RenderComparison.layout:
+        // renderer.floatIndexes = floatIndexes;
+
         renderer._painter.text = textSpan;
         renderer._semanticsInfo = null;
         renderer._cachedCombinedSemanticsInfos = null;
@@ -180,26 +194,25 @@ class RenderWrappingText extends RenderBox {
     return comparison;
   }
 
-  TextPosition getPositionForOffset(Offset offset) {
+  TextPosition getWrappedTextPosForOffset(Offset offset) {
+    offset = offset.round();
     final found = validRenderers.where((r) => r.textRect.contains(offset));
+    print("Comparing: $offset to: ");
+    for (var r in validRenderers) {
+      print(" -> '${r.textOffset}: ${r.textRect}'");
+    }
 
     if (found.isEmpty) {
-      if (renderers.isEmpty) {
-        return const TextPosition(offset: 0);
-      } else {
-        final last = renderers.last;
-        return TextPosition(
-          offset: last.textOffset +
-              last.text
-                  .toPlainText(
-                    includePlaceholders: false,
-                    includeSemanticsLabels: false,
-                  )
-                  .length,
-        );
-      }
+      throw StateError('No text position could be found for offset $offset');
     } else {
-      return found.first.getPositionForOffset(offset);
+      final renderer = found.first;
+      // When I was trying to find the endpoint, I was passing in the entire offset,
+      // but it didn't read right?
+      // Maybe it's when you're the second of multiple?  And you should only apply the first offset?
+      final localOffset = offset - renderer.offset;
+      // final localOffset = offset;
+      final rawOffset = renderer.getPositionForOffset(localOffset);
+      return rawOffset + renderer.textOffset;
     }
   }
 
@@ -207,20 +220,28 @@ class RenderWrappingText extends RenderBox {
     return _atPosition(position).getWordBoundary(position);
   }
 
-  TextRenderer _atPosition(TextPosition pos, {bool includeFloats = false}) {
+  TextRenderer _atPosition(TextPosition globalPos,
+      {bool includeFloats = true}) {
+    return _findAtPosition(globalPos, includeFloats: includeFloats) ??
+        renderers.last;
+  }
+
+  TextRenderer? _findAtPosition(TextPosition globalPos,
+      {bool includeFloats = true}) {
     final iter = renderers.iterator;
-    final offset = pos.offset;
+    final localOffset = globalPos.offset;
     while (iter.moveNext()) {
       final split = iter.current;
-      if (offset <=
-          (split.textOffset +
-              split.textLength +
-              (includeFloats ? 0 : floatCount))) {
+      final endOfRenderer = split._totalTextOffset + split.textLength;
+      final floatOffset = floatIndexes.countBefore(endOfRenderer);
+      final endpoint = endOfRenderer; // + floatOffset;
+      // When finding the last character, the offset should be
+      if (localOffset < endpoint) {
         return split;
       }
     }
-
-    throw StateError('No renderer for pos: $pos');
+    return null;
+    // throw StateError('No renderer for pos: $pos');
   }
 
   List<TextBox> getBoxesForSelection(TextSelection textSelection) {
@@ -234,16 +255,55 @@ class RenderWrappingText extends RenderBox {
     return _atPosition(position).getFullHeightForCaret(position);
   }
 
-  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype,
+  /// Assumes the textPosition being provided is already localized
+  /// to this text.  Returns an offset relative
+  Offset getOffsetForCaret(TextPosition localPosition, Rect caretPrototype,
       {bool includeFloats = true}) {
-    if (!includeFloats) {
-      position = position - floatCount;
-    }
-    return _atPosition(position, includeFloats: includeFloats)
-        .getOffsetForCaret(position, caretPrototype);
+    final renderer = _atPosition(localPosition, includeFloats: includeFloats);
+    final rendererPosition = localPosition - renderer.textOffset;
+    return (renderer.getOffsetForCaret(rendererPosition, caretPrototype) +
+            renderer.offset)
+        .round();
   }
 
   double get preferredLineHeight => renderers.first.initialLineHeight();
+
+  bool contains(Offset offset) {
+    return findRendererAtOffset(offset) != null;
+  }
+
+  TextRenderer? findRendererAtOffset(Offset offset) {
+    for (final renderer in validRenderers) {
+      if (renderer.textRect.contains(offset)) {
+        return renderer;
+      }
+    }
+    return null;
+  }
+
+  TextRenderer? findRendererAtPosition(TextPosition pos) {
+    return _findAtPosition(pos);
+  }
+
+  TextRenderer? rendererBefore(TextRenderer textRenderer) {
+    final rev = [...validRenderers].reversed.iterator;
+    while (rev.moveNext()) {
+      if (textRenderer == rev.current) {
+        return rev.moveNext() ? rev.current : null;
+      }
+    }
+    return null;
+  }
+
+  TextRenderer? rendererAfter(TextRenderer textRenderer) {
+    final rev = [...validRenderers].iterator;
+    while (rev.moveNext()) {
+      if (textRenderer == rev.current) {
+        return rev.moveNext() ? rev.current : null;
+      }
+    }
+    return null;
+  }
 }
 
 ///
@@ -254,12 +314,15 @@ class TextRenderer with RenderTextMixin {
     this._parent,
     this._painter,
     this.startingPlaceholderIndex, {
-    this.textOffset = 0,
+    // required this.floatIndexes,
+    required int textOffset,
     this.maxWidth,
-  })  : assert(_painter.text != null),
+  })  : _textOffset = textOffset,
+        assert(_painter.text != null),
         textLength = _painter.text!.toPlainText().length;
 
-  final int textOffset;
+  final int _textOffset;
+  // List<int> floatIndexes;
   final RenderBox _parent;
   final TextPainter _painter;
   final int startingPlaceholderIndex;
@@ -273,9 +336,15 @@ class TextRenderer with RenderTextMixin {
 
   set offset(Offset value) => _offset = value;
 
+  int get _totalTextOffset {
+    return _textOffset;
+  }
+
   @override
   Offset get offset => _offset;
   double? maxWidth;
+
+  int get textOffset => _textOffset;
 
   Rect get textRect {
     final size = textSize;
@@ -309,7 +378,7 @@ class TextRenderer with RenderTextMixin {
   TextRenderer copyWith({
     required InlineSpan text,
     required int startingPlaceholderIndex,
-    int? textOffset,
+    int? textOffsetDelta,
   }) =>
       TextRenderer(
         _parent,
@@ -322,7 +391,8 @@ class TextRenderer with RenderTextMixin {
             strutStyle: _painter.strutStyle,
             textHeightBehavior: _painter.textHeightBehavior),
         startingPlaceholderIndex,
-        textOffset: textOffset ?? this.textOffset,
+        textOffset: _textOffset + (textOffsetDelta ?? 0),
+        // floatIndexes: floatIndexes,
       );
 
   TextBox placeholderBoxForWidgetIndex(int index) {
@@ -374,8 +444,7 @@ class TextRenderer with RenderTextMixin {
         BoxConstraints(maxWidth: constraints.maxWidth) / textScaleFactor;
 
     final placeholderDimensions = List<PlaceholderDimensions>.filled(
-        placeholderSpans.length, PlaceholderDimensions.empty,
-        growable: false);
+        placeholderSpans.length, PlaceholderDimensions.empty);
 
     var hasFloatedChildren = false;
     firstChild.walkTree<RenderBox>(
@@ -474,27 +543,29 @@ class TextRenderer with RenderTextMixin {
   @override
   List<TextBox> getBoxesForSelection(TextSelection selection) {
     return _painter
-        .getBoxesForSelection(selection - textOffset)
+        .getBoxesForSelection(selection - _totalTextOffset)
         .offset(_offset);
   }
 
   @override
   double? getFullHeightForCaret(TextPosition position) =>
-      _painter.getFullHeightForCaret(position - textOffset, Rect.zero);
+      _painter.getFullHeightForCaret(position - _totalTextOffset, Rect.zero);
 
   @override
   Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) {
     if (isValid) {
-      return _painter.getOffsetForCaret(position - textOffset, caretPrototype) +
-          _offset;
+      return _painter.getOffsetForCaret(position, caretPrototype);
     } else {
       return Offset.zero;
     }
   }
 
   @override
-  TextPosition getPositionForOffset(Offset offset) =>
-      _painter.getPositionForOffset(offset - _offset) + textOffset;
+  TextPosition getPositionForOffset(Offset offset) {
+    final textOffset = _painter.getPositionForOffset(offset);
+
+    return textOffset;
+  }
 
   @override
   TextRange getWordBoundary(TextPosition position) =>
@@ -566,28 +637,12 @@ class TextRenderer with RenderTextMixin {
 //   FloatData get floatData => ((this as RenderMetaData).metaData as FloatData);
 // }
 
-extension on TextPosition {
-  TextPosition operator +(int amount) {
-    return TextPosition(offset: offset + amount, affinity: affinity);
+extension on List<int> {
+  int countAboveOrSame(int other) {
+    return where((i) => i >= other).length;
   }
 
-  TextPosition operator -(int amount) {
-    return TextPosition(offset: max(0, offset - amount), affinity: affinity);
-  }
-}
-
-extension on TextSelection {
-  TextSelection operator +(int textOffset) {
-    final adjusted = copyWith(
-        baseOffset: baseOffset + textOffset,
-        extentOffset: extentOffset + textOffset);
-    return adjusted;
-  }
-
-  TextSelection operator -(int textOffset) {
-    final adjusted = copyWith(
-        baseOffset: max(0, baseOffset - textOffset),
-        extentOffset: max(0, extentOffset - textOffset));
-    return adjusted;
+  int countBefore(int index) {
+    return where((idx) => idx < index).length;
   }
 }

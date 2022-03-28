@@ -154,6 +154,7 @@ mixin FloatLayoutMixin
             if (span != null && span is HitTestTarget) {
               result.add(HitTestEntry(span as HitTestTarget));
               state.stop();
+              break;
             }
           }
         }
@@ -516,7 +517,7 @@ mixin FloatLayoutMixin
           }
 
           render.subs.add(textRenderer.copyWith(
-              textOffset: textRenderer.textOffset + 1,
+              textOffsetDelta: 1,
               text: split.last,
               startingPlaceholderIndex: subIndex == 0
                   ? 0
@@ -576,7 +577,7 @@ mixin FloatLayoutMixin
       if (render[subIndex].placeholderSpans.isNotEmpty) {
         final _hasFloatedChildren = render[subIndex].setPlaceholderDimensions(
             this, subConstraints, meta.textScaleFactor ?? 1.0);
-        hasFloatedChildren = _hasFloatedChildren || _hasFloatedChildren;
+        hasFloatedChildren = hasFloatedChildren || _hasFloatedChildren;
       }
 
       // Layout the text and inline widget children.
@@ -647,7 +648,7 @@ mixin FloatLayoutMixin
             var charIndex =
                 render[subIndex].getPositionForOffset(Offset(x, y)).offset;
             if (charIndex > 0) {
-              final text = span.toPlainText(includeSemanticsLabels: false);
+              final text = span.toPlainText(includeSemanticsLabels: true);
               if (charIndex < text.length - 1) {
                 // Skip trailing spaces.
                 final codeUnits = text.codeUnits;
@@ -675,7 +676,7 @@ mixin FloatLayoutMixin
                     final s2 = split.last.splitAtCharacterIndex(1);
                     if (s2.length == 2) {
                       assert(
-                          s2.first.toPlainText(includeSemanticsLabels: false) ==
+                          s2.first.toPlainText(includeSemanticsLabels: true) ==
                               '\n');
                       split[1] = s2.last;
                     }
@@ -696,7 +697,7 @@ mixin FloatLayoutMixin
                             : render.subs[subIndex - 1].nextPlaceholderIndex))
                     ..add(textRenderer.copyWith(
                         text: split.last,
-                        textOffset: textRenderer.textOffset + charIndex,
+                        textOffsetDelta: charIndex,
                         startingPlaceholderIndex:
                             render.subs[subIndex].nextPlaceholderIndex));
 
@@ -948,7 +949,7 @@ mixin FloatLayoutMixin
 
   @override
   void describeSemanticsConfiguration(SemanticsConfiguration config) {
-    final semanticsInfo = getSemanticsInfo();
+    final semanticsInfo = _getSemanticsInfo();
 
     if (semanticsInfo.anyItem((info) => info.recognizer != null)) {
       config
@@ -1011,7 +1012,7 @@ mixin FloatLayoutMixin
     var semanticsChildIndex = 0;
     final newChildCache = Queue<SemanticsNode>();
 
-    _cachedCombinedSemanticsInfos ??= getSemanticsInfo(combined: true);
+    _cachedCombinedSemanticsInfos ??= _getSemanticsInfo(combined: true);
 
     // dmPrint('\n\n************ assembleSemanticsNode *************');
 
@@ -1169,12 +1170,12 @@ mixin FloatLayoutMixin
   //
   // Utility functions:
   //
-  Map<int, List<List<InlineSpanSemanticsInformation>>> getSemanticsInfo({
+  Map<int, List<List<InlineSpanSemanticsInformation>>> _getSemanticsInfo({
     bool combined = false,
   }) {
     final semanticsInfo = <int, List<List<InlineSpanSemanticsInformation>>>{};
 
-    final result = walkValidChildren((child, state) {
+    walkValidChildren((child, state) {
       if (child.isWidgetItem) {
         // Add a placeholder for each regular child widget.
         semanticsInfo[state.index] = [

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:tuple/tuple.dart';
 
 import '../quill_delta.dart';
+import '../quill_delta_comparator.dart';
 import '../rules/rule.dart';
 import 'attribute.dart';
 import 'history.dart';
@@ -245,7 +246,8 @@ class Document {
     }
 
     if (_delta != _root.toDelta()) {
-      throw 'Compose failed';
+      final comparison = _delta.compareTo(_root.toDelta());
+      throw 'Compose failed: $comparison';
     }
     final change = Tuple3(originalDelta, delta, changeSource);
     _observer.add(change);

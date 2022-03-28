@@ -262,3 +262,23 @@ class Embed extends Leaf {
   @override
   String toString() => '${super.toString()} ${value.type}';
 }
+
+class Float extends Embed {
+  Float(Embeddable data) : super(data);
+
+  @override
+  Node newInstance() => throw UnimplementedError();
+
+  // Refer to https://www.fileformat.info/info/unicode/char/fffc/index.htm
+  static const kFloatReplacementCharacter = '\uFFFD';
+  static final kFloatReplacementInt =
+      kFloatReplacementCharacter.codeUnits.first;
+  // Embed nodes are represented as unicode object replacement character in
+  // plain text.
+
+  @override
+  String toPlainText() => kFloatReplacementCharacter;
+
+  @override
+  String toString() => '${super.toString()} ${value.type}';
+}

@@ -5,12 +5,11 @@ import 'package:tuple/tuple.dart';
 import '../../flutter_quill.dart';
 import '../models/documents/nodes/block.dart';
 import '../models/documents/nodes/line.dart';
+import '../utils/core_ext.dart';
 import '../utils/delta.dart';
 import 'box.dart';
 import 'cursor.dart';
 import 'delegate.dart';
-import 'float/float_data.dart';
-import 'float/shared.dart';
 import 'link.dart';
 import 'text_line.dart';
 import 'text_selection.dart';
@@ -381,15 +380,13 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   }
 
   @override
-  TextPosition getPositionForOffset(Offset offset) {
+  TextPosition? getPositionForOffset(Offset offset,
+      {bool includeFloats = true}) {
     final child = childAtOffset(offset);
     final parentData = child.parentData as BoxParentData;
-    final localPosition =
-        child.getPositionForOffset(offset - parentData.offset);
-    return TextPosition(
-      offset: localPosition.offset + child.container.offset,
-      affinity: localPosition.affinity,
-    );
+    final localPosition = child.getPositionForOffset(offset - parentData.offset,
+        includeFloats: includeFloats);
+    return localPosition?.plusOffset(child.container.offset);
   }
 
   @override
@@ -425,9 +422,9 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     final testPosition = TextPosition(offset: sibling.container.length - 1);
     final testOffset = sibling.getOffsetForCaret(testPosition);
     final finalOffset = Offset(caretOffset.dx, testOffset.dy);
-    return TextPosition(
-        offset: sibling.container.offset +
-            sibling.getPositionForOffset(finalOffset).offset);
+    return sibling
+        .getPositionForOffset(finalOffset, includeFloats: false)
+        ?.plusOffset(sibling.container.offset);
   }
 
   @override
@@ -450,9 +447,9 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     final caretOffset = child.getOffsetForCaret(childLocalPosition);
     final testOffset = sibling.getOffsetForCaret(const TextPosition(offset: 0));
     final finalOffset = Offset(caretOffset.dx, testOffset.dy);
-    return TextPosition(
-        offset: sibling.container.offset +
-            sibling.getPositionForOffset(finalOffset).offset);
+    return sibling
+        .getPositionForOffset(finalOffset, includeFloats: false)
+        ?.plusOffset(sibling.container.offset);
   }
 
   @override
@@ -584,6 +581,18 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
       affinity: position.affinity,
     );
     return child.getCaretPrototype(localPosition);
+  }
+
+  @override
+  bool contains(Offset translate) {
+    var child = firstChild;
+    while (child != null) {
+      if (child.contains(translate)) {
+        return true;
+      }
+      child = childAfter(child);
+    }
+    return false;
   }
 }
 

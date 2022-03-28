@@ -11,8 +11,8 @@ import 'package:tuple/tuple.dart';
 
 import '../models/documents/document.dart';
 import '../models/documents/nodes/container.dart' as container_node;
-import '../models/documents/nodes/line.dart';
 import '../models/documents/style.dart';
+import '../utils/core_ext.dart';
 import '../utils/platform.dart';
 import '../widgets/float/util.dart';
 import 'box.dart';
@@ -21,12 +21,15 @@ import 'cursor.dart';
 import 'default_styles.dart';
 import 'delegate.dart';
 import 'embeds/default_embed_builder.dart';
+import 'float/render_wrappable_text.dart';
 import 'float/shared.dart';
 import 'float_cursor.dart';
 import 'link.dart';
 import 'raw_editor.dart';
 import 'render_editable_ext.dart';
 import 'text_selection.dart';
+
+const kPositionZero = TextPosition(offset: 0);
 
 /// Base interface for the editor state which defines contract used by
 /// various mixins.
@@ -799,9 +802,8 @@ class RenderEditor extends RenderEditableContainerBox
   Offset _getOffsetForCaret(TextPosition position) {
     final child = childAtPosition(position);
     final childPosition = child.globalToLocalPosition(position);
-    final boxParentData = child.parentData as BoxParentData;
     final localOffsetForCaret = child.getOffsetForCaret(childPosition);
-    return boxParentData.offset + localOffsetForCaret;
+    return child.renderOffset + localOffsetForCaret;
   }
 
   void setDocument(Document doc) {
@@ -1252,13 +1254,10 @@ class RenderEditor extends RenderEditableContainerBox
     final local = globalToLocal(offset);
     final child = childAtOffset(local);
 
-    final parentData = child.parentData as BoxParentData;
-    final localOffset = local - parentData.offset;
-    final localPosition = child.getPositionForOffset(localOffset);
-    return TextPosition(
-      offset: localPosition.offset + child.container.offset,
-      affinity: localPosition.affinity,
-    );
+    final localOffset = local - child.renderOffset;
+    final localPosition =
+        child.getPositionForOffset(localOffset, includeFloats: true);
+    return localPosition! + child.container.offset;
   }
 
   /// Returns the y-offset of the editor at which [selection] is visible.
@@ -1497,35 +1496,12 @@ class RenderEditor extends RenderEditableContainerBox
   /// character will be returned.
   @override
   TextPosition getTextPositionAbove(TextPosition position) {
-    final child = childAtPosition(position);
-    final localPosition =
-        TextPosition(offset: position.offset - child.container.documentOffset);
-
-    var newPosition = child.getPositionAbove(localPosition);
-
-    if (newPosition == null) {
-      // There was no text above in the current child, check the direct
-      // sibling.
-      final sibling = childBefore(child);
-      if (sibling == null) {
-        // reached beginning of the document, move to the
-        // first character
-        newPosition = const TextPosition(offset: 0);
-      } else {
-        final caretOffset = child.getOffsetForCaret(localPosition);
-        final testPosition = TextPosition(offset: sibling.container.length - 1);
-        final testOffset =
-            sibling.getOffsetForCaret(testPosition, includeFloats: false);
-        final finalOffset = Offset(caretOffset.dx, testOffset.dy);
-        final siblingPosition = sibling.getPositionForOffset(finalOffset);
-        newPosition = TextPosition(
-            offset: sibling.container.documentOffset + siblingPosition.offset);
-      }
-    } else {
-      newPosition = TextPosition(
-          offset: child.container.documentOffset + newPosition.offset);
-    }
-    return newPosition;
+    return getRelativePosition(position,
+        movePosition: (child, pos) => child.getPositionAbove(pos),
+        nextChild: childBefore,
+        fallbackPosition: kPositionZero,
+        siblingTestPosition: (sibling) =>
+            TextPosition(offset: sibling.container.length - 1));
   }
 
   /// Returns the TextPosition below the given offset into the text.
@@ -1534,35 +1510,60 @@ class RenderEditor extends RenderEditableContainerBox
   /// character will be returned.
   @override
   TextPosition getTextPositionBelow(TextPosition position) {
+    return getRelativePosition(position,
+        movePosition: (child, pos) => child.getPositionBelow(pos),
+        nextChild: childAfter,
+        fallbackPosition: TextPosition(offset: document.length - 1),
+        siblingTestPosition: (sibling) => kPositionZero);
+  }
+
+  TextPosition getRelativePosition(
+    TextPosition position, {
+    required TextPosition? Function(RenderEditableBox box, TextPosition local)
+        movePosition,
+    required RenderEditableBox? Function(RenderEditableBox child) nextChild,
+    required TextPosition fallbackPosition,
+    required TextPosition Function(RenderEditableBox sibling)
+        siblingTestPosition,
+  }) {
     final child = childAtPosition(position);
-    final localPosition =
-        TextPosition(offset: position.offset - child.container.documentOffset);
+    final localPosition = position - child.container.documentOffset;
 
-    var newPosition = child.getPositionBelow(localPosition);
+    var newLocalPosition = movePosition(child, localPosition);
 
-    if (newPosition == null) {
+    if (newLocalPosition == null) {
       // There was no text above in the current child, check the direct
       // sibling.
-      final sibling = childAfter(child);
-      if (sibling == null) {
-        // reached beginning of the document, move to the
-        // last character
-        newPosition = TextPosition(offset: document.length - 1);
-      } else {
+      var sibling = nextChild(child);
+      while (sibling != null && newLocalPosition == null) {
         final caretOffset = child.getOffsetForCaret(localPosition);
-        const testPosition = TextPosition(offset: 0);
-        final testOffset =
-            sibling.getOffsetForCaret(testPosition, includeFloats: false);
-        final finalOffset = Offset(caretOffset.dx, testOffset.dy);
-        final siblingPosition = sibling.getPositionForOffset(finalOffset);
-        newPosition = TextPosition(
-            offset: sibling.container.documentOffset + siblingPosition.offset);
+        final testPosition = siblingTestPosition(sibling);
+        final testOffset = sibling.getOffsetForCaret(testPosition);
+        var finalOffset = Offset(caretOffset.dx, testOffset.dy).round();
+
+        // This offset may be too far left or right
+        if (!sibling.contains(finalOffset)) {
+          finalOffset = testOffset;
+        }
+
+        try {
+          final siblingPosition =
+              sibling.getPositionForOffset(finalOffset, includeFloats: false);
+          newLocalPosition =
+              siblingPosition! + sibling.container.documentOffset;
+          break;
+        } catch (e) {
+          print(e);
+        }
+
+        sibling = nextChild(sibling);
       }
+      newLocalPosition ??= fallbackPosition;
+      return newLocalPosition;
     } else {
-      newPosition = TextPosition(
-          offset: child.container.documentOffset + newPosition.offset);
+      newLocalPosition = newLocalPosition + child.container.documentOffset;
     }
-    return newPosition;
+    return newLocalPosition;
   }
 
   // End TextLayoutMetrics implementation
@@ -1841,7 +1842,7 @@ class RenderEditableContainerBox extends RenderBox
     assert(firstChild != null);
 
     final targetNode =
-        container.queryChild(position.offset, false, withFloats: false).node;
+        container.queryChild(position.offset, false, includeFloats: true).node;
 
     var targetChild = firstChild;
     while (targetChild != null) {
@@ -1881,17 +1882,28 @@ class RenderEditableContainerBox extends RenderBox
       return lastChild!;
     }
 
+    var prevChild = firstChild;
     var child = firstChild;
-    final dx = -offset.dx;
-    var dy = _resolvedPadding!.top;
+    // final dx = -offset.dx;
+    final dx = 0.0;
+    final dy = _resolvedPadding!.top;
     while (child != null) {
-      if (child.size.contains(offset.translate(dx, -dy))) {
+      final childOffset = child.renderOffset;
+      if (childOffset.dy > offset.dy && prevChild != null) {
+        print('Moved past an entire item - must have been last one');
+        return prevChild;
+      }
+      if (child.contains(offset - childOffset)) {
         return child;
       }
-      dy += child.size.height;
+      // dy += child.size.height;
+      prevChild = child;
       child = childAfter(child);
     }
-    throw StateError('No child at offset $offset.');
+    if (prevChild == null) {
+      throw StateError('No child at offset $offset.');
+    }
+    return prevChild;
   }
 
   @override
@@ -1931,7 +1943,7 @@ class RenderEditableContainerBox extends RenderBox
       assert(containerBoxChild.parentData == childParentData);
       containerBoxChild = childParentData.nextSibling;
     }
-    mainAxisExtent += _resolvedPadding!.bottom + floats.overflowY;
+    mainAxisExtent += _resolvedPadding!.bottom;
     quillParent.endingFloats = floats.build(height: mainAxisExtent);
     size = constraints.constrain(Size(constraints.maxWidth, mainAxisExtent));
 

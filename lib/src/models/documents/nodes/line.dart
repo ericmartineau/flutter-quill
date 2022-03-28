@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:collection/collection.dart';
 import 'package:tuple/tuple.dart';
 
+import '../../../widgets/float/shared.dart';
+import '../../../widgets/render_editable_ext.dart';
 import '../../quill_delta.dart';
 import '../attribute.dart';
 import '../style.dart';
@@ -325,8 +327,37 @@ class Line extends Container<Leaf?> {
       add(child);
       child.format(style);
     } else {
-      final result = queryChild(index, true);
-      result.node!.insert(result.offset, data, style);
+      var isFloat = false;
+      if (style != null) {
+        isFloat = floatOf(style.attributes[Attribute.float.key]?.value) !=
+            FCFloat.none;
+      }
+
+      if (isFloat) {
+        index = 0;
+        for (final node in children) {
+          if (node is Leaf && !node.isFloat) {
+            break;
+          } else {
+            index++;
+          }
+        }
+      }
+      var result = queryChild(index, true);
+      if (!isFloat && result.node!.isFloat) {
+        while (result.node != null && result.node!.isFloat) {
+          index++;
+          result = queryChild(index, true);
+        }
+      }
+      if (result.node == null) {
+        // We need to add a the end
+        final child = Leaf(data);
+        add(child);
+        child.format(style);
+      } else {
+        result.node!.insert(result.offset, data, style);
+      }
     }
   }
 

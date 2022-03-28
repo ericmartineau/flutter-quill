@@ -197,7 +197,7 @@ class _TextLineState extends State<TextLine> {
     }
     final result = _getTextSpanForWholeLine(context);
     if (result.item1 == null && result.item2.length == 1) {
-      return result.item2.first;
+      return result.item2.entries.first.value;
     }
 
     final textSpan = result.item1 ?? const TextSpan(text: '');
@@ -214,6 +214,7 @@ class _TextLineState extends State<TextLine> {
       textScaleFactor: MediaQuery.textScaleFactorOf(context),
     );
     return RichTextProxy(
+        line: widget.line,
         floats: floats,
         richText: child,
         textStyle: textSpan.style ?? const TextStyle(),
@@ -223,15 +224,15 @@ class _TextLineState extends State<TextLine> {
         locale: Localizations.localeOf(context));
   }
 
-  Tuple2<TextSpan?, List<Widget>> _getTextSpanForWholeLine(
+  Tuple2<TextSpan?, Map<int, Widget>> _getTextSpanForWholeLine(
       BuildContext context) {
-    final result = <Widget>[];
+    final result = <int, Widget>{};
     final lineStyle = _getLineStyle(widget.styles);
     if (!widget.line.hasEmbed) {
       return Tuple2(
           _buildTextSpan(widget.styles, widget.line.children, lineStyle)
               .singleOrNull,
-          []);
+          {});
     }
 
     // The line could contain more than one Embed & more than one Text
@@ -249,11 +250,10 @@ class _TextLineState extends State<TextLine> {
 
         final embedWidget = buildEmbedWidget(child, i);
         if (embedWidget is MetaData) {
-          result.add(embedWidget);
+          result[child.offset] = embedWidget;
         } else {
           textSpanChildren.add(WidgetSpan(child: EmbedProxy(embedWidget)));
         }
-
         continue;
       }
 
@@ -278,7 +278,7 @@ class _TextLineState extends State<TextLine> {
 
     final widget2 =
         widget.embedBuilder(context, widget.controller, embed, widget.readOnly);
-    if (float != null && float != FCFloat.none) {
+    if (float != FCFloat.none) {
       return MetaData(
         metaData: FloatData(float: float, placeholderIndex: index),
         child: widget2,
@@ -304,7 +304,6 @@ class _TextLineState extends State<TextLine> {
 
   Iterable<TextSpan> _buildTextSpan(DefaultStyles defaultStyles,
       LinkedList<Node> nodes, TextStyle lineStyle) {
-
     if (nodes.isEmpty && kIsWeb) {
       nodes = LinkedList<Node>()..add(leaf.Text('\u{200B}'));
     }
@@ -890,37 +889,27 @@ class RenderEditableTextLine extends RenderEditableBox {
   Offset getOffsetForCaret(TextPosition position, {bool includeFloats = true}) {
     return _body!.getOffsetForCaret(position, _caretPrototype,
             includeFloats: includeFloats) +
-        (_body!.parentData as BoxParentData).offset;
+        _body!.renderOffset;
   }
 
   @override
   TextPosition? getPositionAbove(TextPosition position) {
-    return _getPosition(position, -0.5);
+    return _body!.getPositionAbove(position);
   }
 
   @override
   TextPosition? getPositionBelow(TextPosition position) {
-    return _getPosition(position, 1.5);
+    return _body!.getPositionBelow(position);
   }
 
   @override
   bool get isRepaintBoundary => true;
 
-  TextPosition? _getPosition(TextPosition textPosition, double dyScale) {
-    assert(textPosition.offset < line.length);
-    final offset = getOffsetForCaret(textPosition)
-        .translate(0, dyScale * preferredLineHeight(textPosition));
-    if (_body!.size
-        .contains(offset - (_body!.parentData as BoxParentData).offset)) {
-      return getPositionForOffset(offset);
-    }
-    return null;
-  }
-
   @override
-  TextPosition getPositionForOffset(Offset offset) {
-    return _body!.getPositionForOffset(
-        offset - (_body!.parentData as BoxParentData).offset);
+  TextPosition getPositionForOffset(Offset offset,
+      {bool includeFloats = true}) {
+    return _body!.getPositionForOffset(offset - _body!.renderOffset,
+        includeFloats: includeFloats);
   }
 
   @override
@@ -1312,6 +1301,20 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   Rect getCaretPrototype(TextPosition position) => _caretPrototype;
+
+  @override
+  bool contains(Offset offset) {
+    // This needs to check the _leading _and_ the body
+    if (_leading != null) {
+      if (_leading!.paintBounds
+          .shift(_leading!.renderOffset)
+          .contains(offset)) {
+        return true;
+      }
+    }
+
+    return _body?.contains(offset) == true;
+  }
 }
 
 class _TextLineElement extends RenderObjectElement {
