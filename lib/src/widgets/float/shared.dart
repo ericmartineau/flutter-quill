@@ -5,6 +5,25 @@
 enum FCFloat { none, left, right, start, end }
 enum FCClear { none, left, right, start, end, both }
 
+extension FCFloatValueExt on FCFloat {
+  String? get value {
+    switch (this) {
+      case FCFloat.none:
+        return null;
+      case FCFloat.left:
+        return 'left';
+
+      case FCFloat.right:
+        return 'right';
+
+      case FCFloat.start:
+        return 'start';
+      case FCFloat.end:
+        return 'end';
+    }
+  }
+}
+
 FCFloat floatOf(String? value) {
   if (value == null) return FCFloat.none;
   switch (value) {

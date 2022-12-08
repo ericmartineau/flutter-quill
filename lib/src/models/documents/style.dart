@@ -36,6 +36,14 @@ class Style {
 
   Map<String, Attribute> get attributes => _attributes;
 
+  Attribute? operator [](key) {
+    if (key is Attribute) {
+      return _attributes[key.key];
+    } else {
+      return _attributes[key?.toString()];
+    }
+  }
+
   bool get isEmpty => _attributes.isEmpty;
 
   bool get isNotEmpty => _attributes.isNotEmpty;

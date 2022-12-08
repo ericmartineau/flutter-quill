@@ -1122,7 +1122,7 @@ class RenderEditableTextLine extends RenderEditableBox {
         ..startingFloats = floats.cleared(false);
       _body!.layout(innerConstraints, parentUsesSize: true);
       assert(_bodyParentData.endingFloats != null,
-          'Body shoudl have consumed floats');
+          'Body should have consumed floats');
       _bodyParentData.offset = _bodyParentData.endingFloats!.offset +
           Offset(_resolvedPadding!.left, _resolvedPadding!.top);
 

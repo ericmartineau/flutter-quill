@@ -177,6 +177,13 @@ class ResolveInlineFormatRule extends FormatRule {
   }
 }
 
+final _allowedImageAttributes = [
+  Attribute.style.key,
+  Attribute.float.key,
+  Attribute.width.key,
+  Attribute.height.key
+];
+
 /// Produces Delta with attributes applied to image leaf node
 class ResolveImageFormatRule extends FormatRule {
   const ResolveImageFormatRule();
@@ -184,11 +191,11 @@ class ResolveImageFormatRule extends FormatRule {
   @override
   Delta? applyRule(Delta document, int index,
       {int? len, Object? data, Attribute? attribute}) {
-    if (attribute == null || attribute.key != Attribute.style.key) {
+    if (attribute == null || !_allowedImageAttributes.contains(attribute.key)) {
       return null;
     }
 
-    assert(len == 1 && data == null);
+    assert(data == null);
 
     final delta = Delta()
       ..retain(index)

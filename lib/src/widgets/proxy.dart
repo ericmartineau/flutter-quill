@@ -142,6 +142,12 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
   }
 
   @override
+  void performLayout() {
+    super.performLayout();
+    quillParent.endingFloats = FloatResult();
+  }
+
+  @override
   double getFullHeightForCaret(TextPosition position) => size.height;
 
   @override

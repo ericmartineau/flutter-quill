@@ -103,10 +103,12 @@ class _SelectAlignmentButtonState extends State<SelectAlignmentButton> {
                       theme.toggleableActiveColor)
                   : (widget.iconTheme?.iconUnselectedFillColor ??
                       theme.canvasColor),
-              onPressed: () => _valueAttribute[index] == Attribute.leftAlignment
-                  ? widget.controller
-                      .formatSelection(Attribute.clone(Attribute.align, null))
-                  : widget.controller.formatSelection(_valueAttribute[index]),
+              onPressed: () {
+                _valueAttribute[index] == Attribute.leftAlignment
+                    ? widget.controller
+                        .formatSelection(Attribute.clone(Attribute.align, null))
+                    : widget.controller.formatSelection(_valueAttribute[index]);
+              },
               child: Icon(
                 _valueString[index] == Attribute.leftAlignment.value
                     ? Icons.format_align_left
