@@ -7,14 +7,14 @@ environment:
 dependencies: 
   universal_html: ^2.0.7
   cupertino_icons: ^1.0.5
-  path_provider: ^2.0.11
+  path_provider: ^2.0.15
   filesystem_picker: ^2.0.0-nullsafety.0
   flutter: 
     sdk: flutter
   file_picker: 
     path: /Users/ericm/sunny/local_plugins/flutter_file_picker
   flutter_quill: 
-    path: /Users/ericm/sunny/local_plugins/flutter-quill
+    path: /Users/ericm/aesthetika/checkout/ericmartineau/flutter-quill
 dev_dependencies: 
   flutter_test: 
     sdk: flutter
